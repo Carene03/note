@@ -1,0 +1,61 @@
+name: NOTE H875 list saved Kaggle output metadata, CPU only
+"on":
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/note-h875-cache-metadata.yml"
+permissions:
+  contents: read
+jobs:
+  metadata:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 7
+    env:
+      KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Enumerate output metadata and check for original prepared cache
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${KAGGLE_API_TOKEN:-}"
+          python -m pip install -q --disable-pip-version-check kaggle==2.2.5
+          python - <<'PY'
+          import inspect
+          from kaggle.api.kaggle_api_extended import KaggleApi
+          api=KaggleApi();api.authenticate()
+          for name in dir(api):
+              if ('kernel' in name.lower() and ('output' in name.lower() or 'file' in name.lower())):
+                  attr=getattr(api,name)
+                  if callable(attr):
+                      print('H875_PUBLIC_KAGGLE_API_METHOD',name,str(inspect.signature(attr))[:220])
+          print('H875_KAGGLE_METHOD_INSPECTION_DONE')
+          PY
+          mkdir -p "$RUNNER_TEMP/h875_cache_manifest_probe"
+          # Fetch at most small metadata manifests. Never download GBs of audio,
+          # model weights, cached features or annotations into GitHub.
+          if kaggle kernels output \
+               tinahandriamarosoa/note-h875-train224-k3-41202366684 \
+               -p "$RUNNER_TEMP/h875_cache_manifest_probe" \
+               --file-pattern '(^|/)manifest[.]json$' \
+               >"$RUNNER_TEMP/h875_manifest_log" 2>&1; then
+            echo "H875_MANIFEST_QUERY_SUCCESS"
+          else
+            echo "H875_MANIFEST_QUERY_FAILED"
+          fi
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          root=Path(os.environ['RUNNER_TEMP'])/'h875_cache_manifest_probe'
+          found=list(root.rglob('manifest.json'))
+          print('H875_SAVED_MANIFEST_COUNT',len(found))
+          for f in found:
+              text=str(f.relative_to(root))
+              if 'native256_train224_cal56' in text:
+                  print('H875_ORIGINAL_PREPARED_CACHE_MANIFEST_PRESENT',True,
+                        'BYTES',f.stat().st_size)
+          if not any('native256_train224_cal56' in str(x) for x in found):
+              print('H875_ORIGINAL_PREPARED_CACHE_MANIFEST_PRESENT',False)
+          PY
