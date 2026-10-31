@@ -1,0 +1,56 @@
+name: NOTE Kaggle private compute output verification
+"on":
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/note-kaggle-verify-compute.yml
+permissions:
+  contents: read
+jobs:
+  verify_private_kaggle_execution:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    env:
+      KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install Kaggle CLI
+        run: |
+          set -euo pipefail
+          test -n "${KAGGLE_API_TOKEN:-}"
+          python -m pip install -q --disable-pip-version-check 'kaggle==2.2.5'
+      - name: Wait for the private test kernel to complete
+        shell: bash
+        run: |
+          set -euo pipefail
+          ref="tinahandriamarosoa/note-h873-bridge-smoke-41192555747"
+          finished=0
+          for attempt in $(seq 1 20); do
+            state="$(kaggle kernels status "$ref" 2>&1)" || { echo "NOTE_KAGGLE_STATUS_UNAVAILABLE"; exit 1; }
+            echo "$state"
+            if [[ "$state" == *"COMPLETE"* ]]; then
+              finished=1
+              break
+            fi
+            if [[ "$state" == *"ERROR"* || "$state" == *"CANCEL"* || "$state" == *"FAILED"* ]]; then
+              echo "NOTE_KAGGLE_PRIVATE_EXECUTION_FAILED"
+              exit 1
+            fi
+            sleep 10
+          done
+          if [ "$finished" -ne 1 ]; then
+            echo "NOTE_KAGGLE_PRIVATE_EXECUTION_STILL_PENDING"
+            exit 1
+          fi
+          mkdir -p "$RUNNER_TEMP/note-kaggle-result"
+          kaggle kernels output "$ref" -p "$RUNNER_TEMP/note-kaggle-result" --file-pattern 'NOTE_SMOKE_OK.json'
+          export SMOKE_PATH="$RUNNER_TEMP/note-kaggle-result/NOTE_SMOKE_OK.json"
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          data=json.loads(Path(os.environ["SMOKE_PATH"]).read_text())
+          assert data == {"status":"success","source":"Kaggle CPU","test":"public-bridge-private-kernel"}
+          print("NOTE_KAGGLE_PRIVATE_REMOTE_COMPUTE_VERIFIED")
+          PY
