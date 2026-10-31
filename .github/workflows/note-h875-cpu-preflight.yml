@@ -12,7 +12,7 @@ jobs:
     timeout-minutes: 15
     env:
       GH_TOKEN: ${{ secrets.NOTE_SOURCE_READ_TOKEN }}
-      SOURCE_PIN: 4f3bd466f990906f3d5aa8d9a00bbcdadfce2be1
+      SOURCE_PIN: 0ce68ad3f6ab3bb7db2e428d9b881c41ce7f2fce
     steps:
       - uses: actions/setup-python@v5
         with:
@@ -73,8 +73,8 @@ jobs:
           p=probabilities(model,x,torch.device('cpu'))
           assert np.isfinite(p).all() and np.all((p>=0)&(p<=1))
           print('H875_ONE_REALISTIC_CPU_TRAIN_STEP_VERIFIED',x.shape,'loss_finite')
-          assert 'prepare(cache,True,224,56)' in Path('h875_kaggle_train.py').read_text()
-          print('H875_TRAIN224_FULL_REPREPARE_DETECTED')
+          assert 'prepare(cache,True,224,56)' not in Path('h875_kaggle_train.py').read_text()
+          print('H875_TRAIN224_REPREPARE_PROHIBITED')
           assert 'torch.__version__' in Path('h875_kaggle_train.py').read_text()
           print('H875_ORIGINAL_TORCH_NUMERICAL_PARITY_NOT_YET_PROVEN')
           PY
