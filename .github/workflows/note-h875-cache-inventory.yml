@@ -36,8 +36,14 @@ jobs:
           seen=set()
           for page in range(1,101):
               obj=api.kernels_list_files(ref,page_size=100,page_token=token)
+              if page==1:
+                  print('H875_KAGGLE_API_RESPONSE_TYPE',type(obj).__name__)
+                  print('H875_KAGGLE_API_RESPONSE_FIELDS',','.join(sorted(vars(obj).keys())) if hasattr(obj,'__dict__') else 'NO_OBJECT_DICT')
+                  print('H875_KAGGLE_API_IS_ARRAY',isinstance(obj,(list,tuple)))
+                  print('H875_KAGGLE_API_ARRAY_LEN',len(obj) if isinstance(obj,(list,tuple)) else -1)
               files=getattr(obj,'files',None)
               if files is None and isinstance(obj,dict):files=obj.get('files')
+              if files is None and isinstance(obj,(list,tuple)):files=obj
               files=files or []
               total+=len(files)
               for item in files:
