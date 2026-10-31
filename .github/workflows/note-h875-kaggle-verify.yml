@@ -1,0 +1,112 @@
+name: NOTE H875 verify TRAIN224 model and untouched CAL56 replay
+"on":
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/note-h875-kaggle-verify.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Query private Kaggle H875 status then validate complete outputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${KAGGLE_API_TOKEN:-}"
+          python -m pip install -q --disable-pip-version-check 'kaggle==2.2.5'
+          ref='tinahandriamarosoa/note-h875-train224-k3-41202366684'
+          status="$(kaggle kernels status "$ref" 2>&1)" || { echo 'H875_STATUS_API_ERROR'; exit 1; }
+          echo "$status"
+          if [[ "$status" == *'KernelWorkerStatus.ERROR'* ||
+                "$status" == *'KernelWorkerStatus.CANCELLED'* ]]; then
+            echo 'H875_KAGGLE_TRAINING_FAILED'
+            kaggle kernels logs "$ref" > "$RUNNER_TEMP/private_h875_error.log" 2>&1 || true
+            python - <<'PY'
+          import os,re
+          from pathlib import Path
+          s=(Path(os.environ['RUNNER_TEMP'])/'private_h875_error.log').read_text(errors='replace')
+          # Only coarse error categories in PUBLIC GitHub Actions; no dataset content.
+          categories=('ModuleNotFoundError','RuntimeError','FileNotFoundError',
+                      'AssertionError','OSError','MemoryError','TypeError','ValueError',
+                      'ImportError','CUDA out of memory','No GPU')
+          print('H875_FAILURE_CATEGORIES',','.join(x for x in categories if x in s))
+          print('H875_PRIVATE_LOG_FETCHED',bool(s))
+          PY
+            exit 1
+          fi
+          if [[ "$status" != *'KernelWorkerStatus.COMPLETE'* ]]; then
+            echo 'H875_KAGGLE_TRAIN_OR_EVAL_PENDING'
+            exit 0
+          fi
+          mkdir -p "$RUNNER_TEMP/private_h875_outputs"
+          kaggle kernels output "$ref" -p "$RUNNER_TEMP/private_h875_outputs" \
+            --file-pattern '^(h875_report.json|h875_report.md|h875_manifest.json|h875_selector_checkpoint.pt)$' \
+            > "$RUNNER_TEMP/private_h875_download.log" 2>&1
+          python - <<'PY'
+          import os,json,hashlib
+          from pathlib import Path
+          root=Path(os.environ['RUNNER_TEMP'])/'private_h875_outputs'
+          required=('h875_report.json','h875_report.md','h875_manifest.json','h875_selector_checkpoint.pt')
+          assert all((root/name).is_file() for name in required),'Missing signed H875 output'
+          manifest=json.loads((root/'h875_manifest.json').read_text())
+          result=json.loads((root/'h875_report.json').read_text())
+          def h(name):return hashlib.sha256((root/name).read_bytes()).hexdigest()
+          assert manifest['schema']=='H875_SIGNED_TRAIN224_CAL56_V1'
+          assert manifest['complete'] is True
+          assert manifest['source_commit']=='05ef09cf8d750b3dc0220d38f37b56f6328e52f5'
+          assert len(manifest['source_bundle_sha256'])==64
+          assert manifest['checkpoint_sha256']==h('h875_selector_checkpoint.pt')
+          assert manifest['reports_sha256']=={
+              'h875_report.json':h('h875_report.json'),
+              'h875_report.md':h('h875_report.md')}
+          assert (manifest['train_files'],manifest['cal_files'])==(224,56)
+          assert (manifest['sample_rate'],manifest['hop'])==(44100,256)
+          assert (manifest['future_samples'],manifest['hold_samples'])==(0,0)
+          assert manifest['fit80_opened'] is False and manifest['promoted'] is False
+          assert result['schema']=='H875_CAUSAL_K3_SELECTOR_TRAIN224_CAL56_V1'
+          assert result['complete'] is True
+          assert (result['train_files'],result['cal_files'],result['frames'])==(224,56,325278)
+          assert (result['sample_rate'],result['hop'])==(44100,256)
+          assert result['source_commit']==manifest['source_commit']
+          assert result['checkpoint_sha256']==manifest['checkpoint_sha256']
+          assert result['original_predictions_bit_identical'] is True
+          assert (result['original_H849_correct'],result['original_H866_correct'])==(219457,229758)
+          assert result['fit80_opened'] is False and result['promoted'] is False
+          assert result['model_trained'] is True
+          assert (result['future_samples'],result['hold_samples'])==(0,0)
+          assert result['frozen_threshold']==1.01 or result['frozen_threshold'] in (0.5,0.6,0.7,0.8,0.9,0.95,0.98)
+          val=result['chosen_inner_train_validation_only']
+          assert val['inner_val_net']==val['inner_val_fixed_K3']-val['inner_val_harmed_K4']
+          score=result['cal_once']
+          assert score['total_frames']==325278
+          assert score['fixed_K3']>=0 and score['harmed_true_K4']>=0
+          assert score['net']==score['fixed_K3']-score['harmed_true_K4']
+          assert score['original_correct']==229758
+          assert score['candidate_correct']==229758+score['net']
+          assert sum(v['frames'] for v in score['by_true_k'].values())==325278
+          assert sum(v['correct'] for v in score['by_true_k'].values())==score['candidate_correct']
+          assert score['fixed_K3']==score['accompaniment']['fixed']+score['solo']['fixed']
+          assert score['harmed_true_K4']==score['accompaniment']['harmed']+score['solo']['harmed']
+          assert result['train_validation_group_split']['train_tracks']+result['train_validation_group_split']['validation_tracks']==224
+          print('H875_SIGNED_GPU_TRAIN224_CAL56_REPLAY_VERIFIED')
+          print('H875_SELECTOR_DEVICE',result['selector_device'])
+          print('H875_TRAIN_ONLY_VAL_NET',val['inner_val_net'])
+          print('H875_FROZEN_GATE_THRESHOLD',result['frozen_threshold'])
+          print('H875_EXACT_K_CAL56',score['candidate_correct'],'OF',score['total_frames'])
+          print('H875_K3_CORRECTED',score['fixed_K3'])
+          print('H875_TRUE_K4_HARMED',score['harmed_true_K4'])
+          print('H875_NET_VS_H866',score['net'])
+          print('H875_COMP_NET',score['accompaniment']['fixed']-score['accompaniment']['harmed'])
+          print('H875_NO_FIT80_NO_PROMOTION')
+          PY
