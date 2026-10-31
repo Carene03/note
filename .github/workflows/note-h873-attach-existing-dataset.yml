@@ -1,0 +1,72 @@
+name: NOTE H873 attach completed private dataset to existing Kaggle kernel
+"on":
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/note-h873-attach-existing-dataset.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: note-h873-attach-existing-41194575669
+  cancel-in-progress: false
+jobs:
+  attach_and_relaunch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    env:
+      KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+      GH_TOKEN: ${{ secrets.NOTE_SOURCE_READ_TOKEN }}
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Verify dataset ready and relaunch ORIGINAL private notebook
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${KAGGLE_API_TOKEN:-}" && test -n "${GH_TOKEN:-}"
+          python -m pip install --disable-pip-version-check -q 'kaggle==2.2.5'
+          dataset='tinahandriamarosoa/note-h873-source-41194575669'
+          kernel='tinahandriamarosoa/note-h873-cal56-41194575669'
+          status="$(kaggle datasets status "$dataset" 2>&1)" || { echo 'NOTE_H873_DATASET_STATUS_UNAVAILABLE'; exit 1; }
+          echo "$status"
+          if [[ "$status" != *COMPLETE* && "$status" != *READY* && "$status" != *complete* && "$status" != *success* ]]; then
+            echo 'NOTE_H873_DATASET_NOT_READY; no kernel version pushed'
+            exit 1
+          fi
+          files="$(kaggle datasets files "$dataset" --page-size 20 2>&1)" || { echo 'NOTE_H873_DATASET_FILES_UNAVAILABLE'; exit 1; }
+          printf '%s\n' "$files" | grep -Fq 'note_h873_source.tar.gz' || { echo 'NOTE_H873_SOURCE_ARCHIVE_MISSING'; exit 1; }
+          printf '%s\n' "$files" | grep -Fq 'note_h873_source.sha256' || { echo 'NOTE_H873_SOURCE_CHECKSUM_MISSING'; exit 1; }
+          echo 'NOTE_H873_PRIVATE_DATASET_READY'
+          mkdir -p "$RUNNER_TEMP/h873_existing_kernel"
+          cd "$RUNNER_TEMP/h873_existing_kernel"
+          pinned='58c528c8334baa5c623bd5eafa4a9dc2d129385e'
+          path='research/exactk256/h873/kaggle_bridge/h873_dataset_runner.py'
+          blob="$(gh api "repos/Andriamarosoa/note/contents/$path?ref=$pinned" --jq .sha)" || { echo 'NOTE_H873_READ_TOKEN_FAILED'; exit 1; }
+          test "$blob" = '6612144ac5ed57d224697bbaea77324408b5ea36' || { echo 'NOTE_H873_RUNNER_BLOB_SHA_DRIFT'; exit 1; }
+          gh api "repos/Andriamarosoa/note/contents/$path?ref=$pinned" --jq .content | tr -d '\n' | base64 -d > h873_dataset_runner.py
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          src=Path('h873_dataset_runner.py').read_text()
+          assert 'SOURCE_COMMIT = "05ef09cf8d750b3dc0220d38f37b56f6328e52f5"' in src
+          assert '325278' in src and '256' in src
+          dataset='tinahandriamarosoa/note-h873-source-41194575669'
+          slug='note-h873-cal56-41194575669'
+          Path('kernel-metadata.json').write_text(json.dumps(dict(
+              id='tinahandriamarosoa/'+slug, title=slug,
+              code_file='h873_dataset_runner.py', language='python',
+              kernel_type='script', is_private=True, enable_gpu=False,
+              enable_internet=True, dataset_sources=[dataset],
+              competition_sources=[], kernel_sources=[], model_sources=[]),indent=2)+'\n')
+          print('NOTE_H873_PINNED_PRIVATE_SCRIPT_READY')
+          PY
+          push_output="$(kaggle kernels push -p . 2>&1)" || { echo 'NOTE_H873_KERNEL_RELAUNCH_FAILED'; exit 1; }
+          if [[ "$push_output" == *"not valid dataset sources"* || "$push_output" == *"could not be added"* ]]; then
+            echo 'NOTE_H873_DATASET_ATTACH_REJECTED'
+            exit 1
+          fi
+          printf '%s\n' "$push_output" | grep -E 'Kernel version [0-9]+ successfully pushed|Please check progress' || true
+          kaggle kernels status "$kernel"
+          echo 'NOTE_H873_PRIVATE_KERNEL_RELAUNCHED_WITH_ATTACHED_DATASET'
