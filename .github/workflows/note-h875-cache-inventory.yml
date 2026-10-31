@@ -41,18 +41,27 @@ jobs:
                   print('H875_KAGGLE_API_RESPONSE_FIELDS',','.join(sorted(vars(obj).keys())) if hasattr(obj,'__dict__') else 'NO_OBJECT_DICT')
                   print('H875_KAGGLE_API_IS_ARRAY',isinstance(obj,(list,tuple)))
                   print('H875_KAGGLE_API_ARRAY_LEN',len(obj) if isinstance(obj,(list,tuple)) else -1)
+              # Kaggle CLI 2.2.5 returns ApiListKernelFilesResponse with
+              # _files / _next_page_token attributes, not a .files list.
               files=getattr(obj,'files',None)
+              if files is None:files=getattr(obj,'_files',None)
               if files is None and isinstance(obj,dict):files=obj.get('files')
               if files is None and isinstance(obj,(list,tuple)):files=obj
               files=files or []
+              if page==1 and files:
+                  print('H875_KAGGLE_OUTPUT_FILE_ITEM_TYPE',type(files[0]).__name__)
+                  print('H875_KAGGLE_OUTPUT_FILE_ITEM_FIELDS',
+                        ','.join(sorted(vars(files[0]).keys())) if hasattr(files[0],'__dict__') else 'NO_DICT')
               total+=len(files)
               for item in files:
                   if isinstance(item,dict):
                       name=item.get('ref') or item.get('name') or ''
                       size=item.get('size') or 0
                   else:
-                      name=getattr(item,'ref',None) or getattr(item,'name','')
-                      size=getattr(item,'size',0) or 0
+                      name=(getattr(item,'ref',None) or getattr(item,'_ref',None) or
+                            getattr(item,'name',None) or getattr(item,'_name',''))
+                      size=(getattr(item,'size',None) or getattr(item,'_size',None) or
+                            getattr(item,'total_bytes',None) or getattr(item,'_total_bytes',0))
                   name=str(name).lower()
                   for ext in ('.x.npy','.truth.npz','manifest.json','h875_selector_checkpoint.pt',
                               'h875_report.json','h875_manifest.json'):
@@ -62,7 +71,8 @@ jobs:
                       try:size_cache+=int(size)
                       except Exception:pass
                   if name.endswith('manifest.json'):manifests+=1
-              more=(getattr(obj,'next_page_token',None) or getattr(obj,'nextPageToken',None))
+              more=(getattr(obj,'next_page_token',None) or getattr(obj,'_next_page_token',None)
+                    or getattr(obj,'nextPageToken',None))
               if more is None and isinstance(obj,dict):
                   more=obj.get('nextPageToken') or obj.get('next_page_token')
               if not more or more in seen:
