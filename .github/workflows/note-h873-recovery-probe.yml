@@ -1,0 +1,44 @@
+name: NOTE H873 private Kaggle output recovery probe
+"on":
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/note-h873-recovery-probe.yml"
+permissions:
+  contents: read
+jobs:
+  recover:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    env:
+      KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Inspect available Kaggle reports without publishing private contents
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${KAGGLE_API_TOKEN:-}"
+          python -m pip install -q --disable-pip-version-check kaggle==2.2.5
+          ref="tinahandriamarosoa/note-h873-cal56-41195681629"
+          kaggle kernels status "$ref" || true
+          mkdir -p "$RUNNER_TEMP/h873"
+          if kaggle kernels output "$ref" -p "$RUNNER_TEMP/h873" \
+              --file-pattern '^(report.json|report.md|k3_to_k4_3206_errors.csv|k3_to_k4_annotated_note_exposure.csv|run_manifest.json|STATUS.md)$' \
+              > "$RUNNER_TEMP/private_kaggle_download.log" 2>&1; then
+            echo "NOTE_H873_RECOVERY_DOWNLOAD_ACCEPTED"
+          else
+            echo "NOTE_H873_RECOVERY_DOWNLOAD_REJECTED"
+          fi
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          out=Path(os.environ['RUNNER_TEMP'])/'h873'
+          names=('report.json','report.md','k3_to_k4_3206_errors.csv',
+                 'k3_to_k4_annotated_note_exposure.csv','run_manifest.json','STATUS.md')
+          for n in names:
+              p=out/n
+              print('NOTE_H873_RECOVER',n,'PRESENT' if p.is_file() else 'MISSING',p.stat().st_size if p.is_file() else 0)
+          PY
