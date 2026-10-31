@@ -1,5 +1,5 @@
 name: NOTE H875 private reusable cache Kaggle status and integrity
-# H875 CPU cache verification after background progress
+# H875 cache completion verification after user reported finished (2026-10-31)
 "on":
   push:
     branches: [main]
