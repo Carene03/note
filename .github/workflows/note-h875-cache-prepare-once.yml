@@ -1,0 +1,105 @@
+name: NOTE H875 one-time reusable CPU cache preparation
+"on":
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/note-h875-cache-prepare-once.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: h875-once-cpu-cache-preparation
+  cancel-in-progress: false
+
+jobs:
+  submit_cache_prep:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+      GH_TOKEN: ${{ secrets.NOTE_SOURCE_READ_TOKEN }}
+      H875_CACHE_PRIVATE_PIN: 173cfb61cdf72e7d60a339a76a89b5bbd69deca4
+      H875_PRIVATE_DATASET: tinahandriamarosoa/note-h873-source-41195681629
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Validate authentication and source access
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${GH_TOKEN:-}" && test -n "${KAGGLE_API_TOKEN:-}"
+          gh api repos/Andriamarosoa/note --silent
+          echo "H875_CACHE_SOURCE_TOKEN_VERIFIED"
+      - name: Retrieve exact private pinned cache builder and verify its contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/h875_cache"
+          cd "$RUNNER_TEMP/h875_cache"
+          path="research/exactk256/h875_cache_prepare.py"
+          sha="$(gh api "repos/Andriamarosoa/note/contents/$path?ref=$H875_CACHE_PRIVATE_PIN" --jq '.sha')"
+          [[ "$sha" == "cb5f2bc56122251004c767b6213cb37e597e185b" ]] ||
+             { echo "H875_CACHE_PRIVATE_SOURCE_BLOB_DRIFT"; exit 1; }
+          gh api "repos/Andriamarosoa/note/contents/$path?ref=$H875_CACHE_PRIVATE_PIN" --jq '.content' |
+             tr -d '\n' | base64 --decode > cache_prepare.py
+          python -m py_compile cache_prepare.py
+          python - <<'PY'
+          from pathlib import Path
+          s=Path('cache_prepare.py').read_text()
+          assert 'prepare(CACHE,True,224,56)' in s
+          assert 'sum(r["frames"] for r in rows if r["split"]=="train")==1183462' in s
+          assert 'sum(r["frames"] for r in rows if r["split"]=="cal")==325278' in s
+          assert 'H875_CACHE_280_TRACKS_560_FILES_SHA_VERIFIED' in s
+          assert 'torch==2.5.1' in s
+          assert 'fit80_opened=False' in s
+          assert 'model_trained=False' in s
+          assert 'promoted=False' in s
+          print('H875_CACHE_PREPARE_STATIC_CONTRACTS_PASS')
+          PY
+      - name: Verify existing ORIGINAL private Kaggle source is ready
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet --disable-pip-version-check 'kaggle==2.2.5'
+          status="$(kaggle datasets status "$H875_PRIVATE_DATASET" 2>&1)"
+          [[ "${status,,}" == "ready" ]] ||
+             { echo "H875_CACHE_SOURCE_DATASET_NOT_READY"; exit 1; }
+          listing="$(kaggle datasets files "$H875_PRIVATE_DATASET" --page-size 40)"
+          [[ "$listing" == *"note_h873_source.bin"* &&
+             "$listing" == *"note_h873_source.sha256"* ]] ||
+             { echo "H875_CACHE_SOURCE_DATASET_INCOMPLETE"; exit 1; }
+          echo "H875_CACHE_PRIVATE_SOURCE_READY"
+      - name: Launch one PRIVATE Kaggle CPU-only cache preparation
+        shell: bash
+        run: |
+          set -euo pipefail
+          p="$RUNNER_TEMP/h875_cache"
+          python - <<'PY'
+          import os,json
+          from pathlib import Path
+          root=Path(os.environ['RUNNER_TEMP'])/'h875_cache'
+          slug='note-h875-cpu-cache-'+os.environ['GITHUB_RUN_ID']
+          meta=dict(id='tinahandriamarosoa/'+slug,title=slug,
+                    code_file='cache_prepare.py',language='python',
+                    kernel_type='script',is_private=True,
+                    enable_gpu=False,enable_internet=True,
+                    dataset_sources=[os.environ['H875_PRIVATE_DATASET']],
+                    competition_sources=[],kernel_sources=[],model_sources=[])
+          (root/'kernel-metadata.json').write_text(json.dumps(meta,indent=2)+'\n')
+          print('H875_CACHE_PRIVATE_CPU_ONLY',not meta['enable_gpu'])
+          print('H875_CACHE_PRIVATE_KERNEL',meta['id'])
+          PY
+          result="$(kaggle kernels push -p "$p" 2>&1)" ||
+              { echo "H875_CACHE_KAGGLE_SUBMISSION_FAILED"; exit 1; }
+          if [[ "$result" == *"not valid dataset sources"* ||
+                "$result" == *"could not be added"* ]]; then
+            echo "H875_CACHE_ATTACH_REJECTED"
+            exit 1
+          fi
+          echo "$result" | grep -E 'Kernel version [0-9]+ successfully pushed|Please check progress' || true
+          ref="tinahandriamarosoa/note-h875-cpu-cache-$GITHUB_RUN_ID"
+          kaggle kernels status "$ref"
+          echo "H875_CACHE_CPU_ONLY_SUBMITTED"
+          echo "https://www.kaggle.com/code/$ref"
