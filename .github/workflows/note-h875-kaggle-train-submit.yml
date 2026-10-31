@@ -1,9 +1,7 @@
 name: NOTE H875 TRAIN224 learned K3 K4 selector private Kaggle
+# No automatic GPU or CPU heavy replay; explicit approval and cache validation required.
 "on":
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/note-h875-kaggle-train-submit.yml"
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -19,7 +17,7 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.NOTE_SOURCE_READ_TOKEN }}
       KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
-      H875_PRIVATE_PIN: e9b9827db057c5545626e51389b1c732bc11afc2
+      H875_PRIVATE_PIN: a3d50558ec74a3c9f7380c5eb67ef2330acf1579
       H875_DATASET: tinahandriamarosoa/note-h873-source-41195681629
     steps:
       - uses: actions/setup-python@v5
@@ -93,7 +91,7 @@ jobs:
           (kernel/'h875_train.py').write_text(program)
           meta=dict(id='tinahandriamarosoa/'+slug,title=slug,
               code_file='h875_train.py',language='python',kernel_type='script',
-              is_private=True,enable_gpu=True,enable_internet=True,
+              is_private=True,enable_gpu=False,enable_internet=True,
               dataset_sources=[os.environ['H875_DATASET']],
               competition_sources=[],kernel_sources=[],model_sources=[])
           (kernel/'kernel-metadata.json').write_text(json.dumps(meta,indent=2)+'\n')
