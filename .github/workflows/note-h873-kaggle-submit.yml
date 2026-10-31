@@ -20,7 +20,7 @@ jobs:
       KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
       GH_TOKEN: ${{ secrets.NOTE_SOURCE_READ_TOKEN }}
       NOTE_SOURCE_BRANCH: codex/note-exactk-h873-kaggle-256-20261031
-      NOTE_BRIDGE_SHA: 58c528c8334baa5c623bd5eafa4a9dc2d129385e
+      NOTE_BRIDGE_SHA: ea3f52376567608a8ea9385e54c5391216c4837c
       NOTE_SCIENCE_SHA: 05ef09cf8d750b3dc0220d38f37b56f6328e52f5
     steps:
       - name: Fail closed unless both private access tokens exist
@@ -66,6 +66,8 @@ jobs:
           test "$(git rev-parse HEAD)" = "$NOTE_BRIDGE_SHA"
           test -f research/exactk256/h873/kaggle_bridge/prepare_and_submit.py
           test -f research/exactk256/h873/kaggle_bridge/h873_dataset_runner.py
+          python -m py_compile research/exactk256/h873/kaggle_bridge/prepare_and_submit.py research/exactk256/h873/kaggle_bridge/h873_dataset_runner.py
+          (cd research/exactk256/h873/kaggle_bridge && python -m unittest -q test_bridge)
           echo "NOTE_H873_PINNED_PRIVATE_SOURCE_READY"
       - name: Stage a PRIVATE Kaggle dataset and submit the native256 replay
         shell: bash
