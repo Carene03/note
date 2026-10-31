@@ -1,4 +1,5 @@
 name: NOTE H874 verify Kaggle CAL56 K3 K4 corrected versus harmed
+# Recheck H874 private execution and immutable source outputs: 2026-10-31
 "on":
   push:
     branches: [main]
