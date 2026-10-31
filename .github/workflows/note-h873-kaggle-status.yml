@@ -23,9 +23,9 @@ jobs:
           set -euo pipefail
           test -n "${KAGGLE_API_TOKEN:-}" || { echo "KAGGLE_SECRET_MISSING"; exit 1; }
           python -m pip install -q --disable-pip-version-check 'kaggle==2.2.5'
-          ref="tinahandriamarosoa/note-h873-cal56-41194575669"
+          ref="tinahandriamarosoa/note-h873-cal56-41195681629"
           status="$(kaggle kernels status "$ref" 2>&1)" || { echo "NOTE_H873_STATUS_QUERY_FAILED"; exit 1; }
-          echo "NOTE_H873_RELAUNCH_VERSION_2_CHECK"
+          echo "NOTE_H873_OPAQUE_BIN_RUN_STATUS_CHECK"
           echo "$status"
           if [[ "$status" == *"KernelWorkerStatus.COMPLETE"* ]]; then
             echo "NOTE_H873_KAGGLE_KERNEL_COMPLETE"
