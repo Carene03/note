@@ -12,7 +12,7 @@ jobs:
     timeout-minutes: 15
     env:
       GH_TOKEN: ${{ secrets.NOTE_SOURCE_READ_TOKEN }}
-      SOURCE_PIN: 95d0cb6873f0922502201c96421055151db44bfd
+      SOURCE_PIN: 4f3bd466f990906f3d5aa8d9a00bbcdadfce2be1
     steps:
       - uses: actions/setup-python@v5
         with:
