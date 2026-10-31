@@ -23,7 +23,7 @@ jobs:
           test -n "${KAGGLE_API_TOKEN:-}"
           python -m pip install --disable-pip-version-check -q 'kaggle==2.2.5'
           ref='tinahandriamarosoa/note-h873-cal56-41195681629'
-          kaggle kernels status "$ref"
+          echo 'NOTE_H873_PROGRESS_RECHECK_FOR_USER_LINK'\n          kaggle kernels status "$ref"
           kaggle kernels logs "$ref" > "$RUNNER_TEMP/h873_private.log" 2>&1 || true
           python - "$RUNNER_TEMP/h873_private.log" <<'PY'
           from pathlib import Path
