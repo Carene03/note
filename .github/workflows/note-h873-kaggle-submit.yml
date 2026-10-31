@@ -42,11 +42,26 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          gh repo clone Andriamarosoa/note "$RUNNER_TEMP/note-private" -- \
-            --filter=blob:none --depth=50 --single-branch --branch "$NOTE_SOURCE_BRANCH"
+          # An environment-only Git auth header is inherited by git's lazy
+          # promisor fetches, without putting the token in command arguments,
+          # the clone URL, .git/config or the public repository.
+          BASIC_AUTH="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          export GIT_CONFIG_COUNT=1
+          export GIT_CONFIG_KEY_0="http.https://github.com/.extraheader"
+          export GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $BASIC_AUTH"
+          gh api repos/Andriamarosoa/note --silent
+          echo "NOTE_SOURCE_TOKEN_AUTHENTICATED"
+          git clone --filter=blob:none --depth=80 --single-branch --branch "$NOTE_SOURCE_BRANCH" \
+            "https://github.com/Andriamarosoa/note.git" "$RUNNER_TEMP/note-private"
           cd "$RUNNER_TEMP/note-private"
-          git cat-file -e "$NOTE_BRIDGE_SHA^{commit}" || { echo "Pinned bridge commit unavailable"; exit 1; }
-          git cat-file -e "$NOTE_SCIENCE_SHA^{commit}" || { echo "Pinned science commit unavailable"; exit 1; }
+          if ! git cat-file -e "$NOTE_BRIDGE_SHA^{commit}" 2>/dev/null; then
+            git fetch --no-tags --depth=80 origin "$NOTE_BRIDGE_SHA"
+          fi
+          if ! git cat-file -e "$NOTE_SCIENCE_SHA^{commit}" 2>/dev/null; then
+            git fetch --no-tags --depth=80 origin "$NOTE_SCIENCE_SHA"
+          fi
+          git cat-file -e "$NOTE_BRIDGE_SHA^{commit}"
+          git cat-file -e "$NOTE_SCIENCE_SHA^{commit}"
           git checkout --detach "$NOTE_BRIDGE_SHA"
           test "$(git rev-parse HEAD)" = "$NOTE_BRIDGE_SHA"
           test -f research/exactk256/h873/kaggle_bridge/prepare_and_submit.py
@@ -56,6 +71,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # git archive below can fetch older missing blobs from a partial
+          # clone. Use the same ephemeral header without persisting credentials.
+          BASIC_AUTH="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          export GIT_CONFIG_COUNT=1
+          export GIT_CONFIG_KEY_0="http.https://github.com/.extraheader"
+          export GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $BASIC_AUTH"
           cd "$RUNNER_TEMP/note-private"
           python research/exactk256/h873/kaggle_bridge/prepare_and_submit.py \
             --kaggle-owner "tinahandriamarosoa" \
