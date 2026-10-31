@@ -1,4 +1,5 @@
 name: NOTE H875 verify TRAIN224 model and untouched CAL56 replay
+# New private CPU-only model 41212687143 from SHA-verified cached TRAIN224/CAL56.
 # Actual private Kaggle H875 verification, 31 Oct 2026 after initial run
 "on":
   push:
@@ -26,7 +27,7 @@ jobs:
           set -euo pipefail
           test -n "${KAGGLE_API_TOKEN:-}"
           python -m pip install -q --disable-pip-version-check 'kaggle==2.2.5'
-          ref='tinahandriamarosoa/note-h875-train224-k3-41202366684'
+          ref='tinahandriamarosoa/note-h875-cpu-trained-41212687143'
           status="$(kaggle kernels status "$ref" 2>&1)" || { echo 'H875_STATUS_API_ERROR'; exit 1; }
           echo "$status"
           if [[ "$status" == *'KernelWorkerStatus.ERROR'* ||
