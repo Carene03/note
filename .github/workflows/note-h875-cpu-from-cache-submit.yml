@@ -1,0 +1,155 @@
+name: NOTE H875 train learned K3 rescue from CERTIFIED CPU feature cache
+"on":
+  push:
+    branches: [main]
+    paths:
+      - "requests/h875/train-cpu-*.txt"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: h875-cpu-train-after-cache-certification
+  cancel-in-progress: false
+
+jobs:
+  submit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 16
+    env:
+      GH_TOKEN: ${{ secrets.NOTE_SOURCE_READ_TOKEN }}
+      KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+      SOURCE_PIN: 0ce68ad3f6ab3bb7db2e428d9b881c41ce7f2fce
+      ORIGINAL_DATASET: tinahandriamarosoa/note-h873-source-41195681629
+      CACHE_KERNEL: tinahandriamarosoa/note-h875-cpu-cache-41208886044
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Verify secret ownership and immutable NOTE source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${GH_TOKEN:-}" && test -n "${KAGGLE_API_TOKEN:-}"
+          gh api repos/Andriamarosoa/note --silent
+          echo "H875_TRAIN_PRIVATE_NOTE_AUTHENTICATED"
+      - name: Read verified private CPU learner and enforce frozen SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/h875_train"
+          mkdir -p "$root"
+          cd "$root"
+          for name in h875_gate.py test_h875_gate.py h875_kaggle_train.py; do
+            sha="$(gh api "repos/Andriamarosoa/note/contents/research/exactk256/$name?ref=$SOURCE_PIN" --jq '.sha')"
+            case "$name:$sha" in
+              h875_gate.py:6008e8207a750aa694bb088dee885ff933ae7960|\
+              test_h875_gate.py:a52c3c0f5db84bc555d5ac77de819ecfd102a3e3|\
+              h875_kaggle_train.py:13491866bd23c3acaaaf3b9b4ac8cc1a03dcb1c5) ;;
+              *) echo "H875_SOURCE_SHA_DRIFT"; exit 1;;
+            esac
+            gh api "repos/Andriamarosoa/note/contents/research/exactk256/$name?ref=$SOURCE_PIN" --jq '.content' |
+               tr -d '\n' | base64 -d > "$name"
+          done
+          python -m py_compile h875_gate.py test_h875_gate.py h875_kaggle_train.py
+          echo "H875_PRIVATE_CPU_SOURCE_PIN_VERIFIED"
+      - name: Run eight CPU protection tests before any Kaggle submission
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet --disable-pip-version-check \
+              'numpy==1.26.4' 'pytest==9.2.0'
+          python -m pip install --quiet --disable-pip-version-check \
+              'torch==2.5.1' --index-url 'https://download.pytorch.org/whl/cpu'
+          cd "$RUNNER_TEMP/h875_train"
+          python -m pytest -q test_h875_gate.py
+          python - <<'PY'
+          from pathlib import Path
+          s=Path('h875_kaggle_train.py').read_text()
+          assert 'H875_ORIGINAL_CPU_PREPARED_CACHE_280_TRACKS_REUSED' in s
+          assert 'prepare(cache,True,224,56)' not in s
+          assert 'H875_PRIVATE_REUSABLE_NATIVE256_CACHE_V1' in s
+          assert 'device=torch.device("cpu")' in s
+          print('H875_TRAIN_EIGHT_CPU_PREFLIGHTS_PASS')
+          PY
+      - name: Prove cache kernel COMPLETED and input dataset READY
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet --disable-pip-version-check 'kaggle==2.2.5'
+          cache_status="$(kaggle kernels status "$CACHE_KERNEL" 2>&1)"
+          [[ "$cache_status" == *"KernelWorkerStatus.COMPLETE"* ]] ||
+              { echo "H875_CACHE_NOT_COMPLETE_ABSOLUTE_BLOCK"; exit 1; }
+          dataset_status="$(kaggle datasets status "$ORIGINAL_DATASET" 2>&1)"
+          [[ "${dataset_status,,}" == "ready" ]] ||
+              { echo "H875_ORIGINAL_SOURCE_DATASET_NOT_READY"; exit 1; }
+          mkdir -p "$RUNNER_TEMP/cache_certificate_check"
+          kaggle kernels output "$CACHE_KERNEL" \
+             -p "$RUNNER_TEMP/cache_certificate_check" \
+             --file-pattern '(^|/)h875_cache_certificate[.]json$' \
+             > "$RUNNER_TEMP/private_certificate.log" 2>&1
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          root=Path(os.environ['RUNNER_TEMP'])/'cache_certificate_check'
+          items=list(root.rglob('h875_cache_certificate.json'))
+          assert len(items)==1
+          c=json.loads(items[0].read_text())
+          assert c['schema']=='H875_PRIVATE_REUSABLE_NATIVE256_CACHE_V1'
+          assert c['complete'] is True
+          assert c['validated_files']==560 and c['validated_rows']==280
+          assert (c['training_tracks'],c['calibration_tracks'])==(224,56)
+          assert (c['train_frames'],c['cal_frames'])==(1183462,325278)
+          assert (c['sample_rate'],c['new_samples_per_decision'])==(44100,256)
+          assert c['fit80_opened'] is False and c['model_trained'] is False
+          assert c['promoted'] is False and c['future_samples']==c['hold_samples']==0
+          print('H875_COMPLETED_CACHE_CERTIFICATE_GATE_PASS')
+          PY
+      - name: Submit exactly one PRIVATE Kaggle CPU training run with cached inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/h875_train"
+          mkdir -p "$root/kernel"
+          python - <<'PY'
+          import os,json
+          from pathlib import Path
+          root=Path(os.environ['RUNNER_TEMP'])/'h875_train'
+          source=(root/'h875_kaggle_train.py').read_text()
+          gate=(root/'h875_gate.py').read_text()
+          anchor='    from h875_gate import (K3RescueNet,eligible_mask,make_features,'
+          assert source.count(anchor)==1
+          # Import the exact private H875 gate ONLY after pinned CPU PyTorch has
+          # been installed and the immutable source bundle authenticated.
+          injection=('    import types\n'
+             '    module=types.ModuleType("h875_gate")\n'
+             '    exec(compile('+repr(gate)+',"h875_gate.py","exec"),module.__dict__)\n'
+             '    sys.modules["h875_gate"]=module\n')
+          program=source.replace(anchor,injection+anchor)
+          compile(program,'h875_train.py','exec')
+          kernel=root/'kernel'
+          (kernel/'h875_train.py').write_text(program)
+          slug='note-h875-cpu-trained-'+os.environ['GITHUB_RUN_ID']
+          meta=dict(id='tinahandriamarosoa/'+slug,title=slug,
+              code_file='h875_train.py',language='python',kernel_type='script',
+              is_private=True,enable_gpu=False,enable_internet=True,
+              dataset_sources=[os.environ['ORIGINAL_DATASET']],
+              kernel_sources=[os.environ['CACHE_KERNEL']],
+              competition_sources=[],model_sources=[])
+          assert not meta['enable_gpu'] and len(meta['kernel_sources'])==1
+          (kernel/'kernel-metadata.json').write_text(json.dumps(meta,indent=2)+'\n')
+          print('H875_TRAINING_CPU_ONLY',not meta['enable_gpu'])
+          print('H875_PRIVATE_MODEL_KERNEL',meta['id'])
+          PY
+          result="$(kaggle kernels push -p "$root/kernel" 2>&1)" ||
+              { echo "H875_PRIVATE_TRAIN_KAGGLE_PUSH_FAILED"; exit 1; }
+          if [[ "$result" == *"not valid"* ||
+                "$result" == *"could not be added"* ]]; then
+            echo "H875_CACHE_KERNEL_ATTACH_REJECTED"
+            exit 1
+          fi
+          echo "$result" | grep -E 'Kernel version [0-9]+ successfully pushed|Please check progress' || true
+          ref="tinahandriamarosoa/note-h875-cpu-trained-$GITHUB_RUN_ID"
+          kaggle kernels status "$ref"
+          echo "H875_PRIVATE_CPU_TRAINING_SUBMITTED_AFTER_CACHE_CERTIFICATION"
+          echo "https://www.kaggle.com/code/$ref"
