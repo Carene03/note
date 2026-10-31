@@ -1,0 +1,77 @@
+name: NOTE Kaggle private compute smoke
+"on":
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/note-kaggle-private-compute-smoke.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+concurrency:
+  group: note-kaggle-private-compute-smoke
+  cancel-in-progress: false
+
+jobs:
+  submit_private_kaggle_script:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 7
+    env:
+      KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+    steps:
+      - name: Reject missing API token
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${KAGGLE_API_TOKEN:-}" || { echo "NOTE_KAGGLE_TOKEN_MISSING"; exit 1; }
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install Kaggle official CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -q --disable-pip-version-check 'kaggle==2.2.5'
+      - name: Construct strictly private, harmless Kaggle script
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          p=Path("/tmp/note_private_compute_smoke")
+          p.mkdir(parents=True,exist_ok=False)
+          slug="note-h873-bridge-smoke-"+os.environ["GITHUB_RUN_ID"]
+          (p/"smoke.py").write_text(
+              "import json, pathlib\n"
+              "pathlib.Path('/kaggle/working/NOTE_SMOKE_OK.json').write_text(json.dumps(dict(status='success', source='Kaggle CPU', test='public-bridge-private-kernel')))\n"
+              "print('NOTE_KAGGLE_COMPUTE_EXECUTED')\n")
+          meta=dict(id="tinahandriamarosoa/"+slug,
+              title="NOTE private compute smoke "+os.environ["GITHUB_RUN_ID"],
+              code_file="smoke.py",language="python",kernel_type="script",
+              is_private=True,enable_gpu=False,enable_internet=False,
+              dataset_sources=[],competition_sources=[],kernel_sources=[],model_sources=[])
+          (p/"kernel-metadata.json").write_text(json.dumps(meta,indent=2)+"\n")
+          print("NOTE_KAGGLE_PRIVATE_KERNEL",meta["id"])
+          PY
+      - name: Submit and start private Kaggle CPU job
+        shell: bash
+        run: |
+          set -euo pipefail
+          kaggle kernels push -p /tmp/note_private_compute_smoke
+          echo "NOTE_KAGGLE_PRIVATE_KERNEL_PUSH_OK"
+          echo "https://www.kaggle.com/code/tinahandriamarosoa/note-h873-bridge-smoke-$GITHUB_RUN_ID"
+      - name: Check Kaggle accepted the job
+        shell: bash
+        run: |
+          set -euo pipefail
+          ref="tinahandriamarosoa/note-h873-bridge-smoke-$GITHUB_RUN_ID"
+          for attempt in 1 2 3 4 5; do
+            if kaggle kernels status "$ref"; then
+              echo "NOTE_KAGGLE_KERNEL_VISIBLE"
+              exit 0
+            fi
+            sleep 4
+          done
+          echo "NOTE_KAGGLE_PUSH_SUCCEEDED_BUT_STATUS_NOT_VISIBLE"
+          exit 1
