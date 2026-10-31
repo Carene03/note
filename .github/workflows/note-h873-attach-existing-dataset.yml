@@ -31,7 +31,7 @@ jobs:
           kernel='tinahandriamarosoa/note-h873-cal56-41194575669'
           status="$(kaggle datasets status "$dataset" 2>&1)" || { echo 'NOTE_H873_DATASET_STATUS_UNAVAILABLE'; exit 1; }
           echo "$status"
-          if [[ "$status" != *COMPLETE* && "$status" != *READY* && "$status" != *complete* && "$status" != *success* ]]; then
+          if [[ "$status" != *COMPLETE* && "$status" != *READY* && "$status" != *complete* && "$status" != *ready* && "$status" != *success* ]]; then
             echo 'NOTE_H873_DATASET_NOT_READY; no kernel version pushed'
             exit 1
           fi
