@@ -1,0 +1,93 @@
+name: NOTE H873 aggregate note-level root-cause diagnosis
+"on":
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/note-h873-aggregate-diagnosis.yml"
+permissions:
+  contents: read
+jobs:
+  analyze:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    env:
+      KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Analyze only aggregate CAL56 loss patterns and original note contexts
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${KAGGLE_API_TOKEN:-}"
+          python -m pip install -q --disable-pip-version-check kaggle==2.2.5
+          mkdir -p "$RUNNER_TEMP/h873"
+          kaggle kernels output 'tinahandriamarosoa/note-h873-cal56-41195681629' \
+            -p "$RUNNER_TEMP/h873" \
+            --file-pattern '^(report.json|k3_to_k4_3206_errors.csv|k3_to_k4_annotated_note_exposure.csv)$' \
+            > "$RUNNER_TEMP/kaggle_private_output_log" 2>&1
+          python - <<'PY'
+          import os,csv,json,collections,statistics
+          from pathlib import Path
+          root=Path(os.environ['RUNNER_TEMP'])/'h873'
+          report=json.loads((root/'report.json').read_text())
+          with (root/'k3_to_k4_3206_errors.csv').open(newline='') as f:
+              rows=list(csv.DictReader(f))
+          with (root/'k3_to_k4_annotated_note_exposure.csv').open(newline='') as f:
+              notes=list(csv.DictReader(f))
+          assert len(rows)==3206 and len(notes)==1265
+          print('H873_AGG_TOTAL',len(rows),'PRESERVED_K3',report['preserved_k3'])
+          for style,d in sorted(report['styles'].items()):
+              print('H873_COMP_STYLE',style,'LOSSES',d['lost'],'CONTROLS',d['controls'],
+                    'SOURCE_TOP2',d['upstream_source_top2_loss'],
+                    'SPECIALIST_TOP2',d['upstream_specialist_top2_loss'])
+          for key,d in sorted(report['metrics'].items()):
+              a,b=d['loss'],d['control']
+              if key.endswith('top2'):
+                  print('H873_UPSTREAM_METRIC',key,'LOSS',a.get('positive'),'OF',a['n'],
+                        'CONTROL',b.get('positive'),'OF',b['n'],
+                        'TRACK_DELTA_MEDIAN',d['track_median_difference'],'N_TRACKS',d['track_pairs'])
+              elif 'logit' in key or key in ('physical_pcm_rms_dbfs','sum_six_string_probabilities'):
+                  print('H873_NUMERIC_METRIC',key,'LOSS_MEDIAN',a.get('median'),
+                        'CONTROL_MEDIAN',b.get('median'),
+                        'TRACK_DELTA_MEDIAN',d['track_median_difference'],'N_TRACKS',d['track_pairs'])
+          ctx=report['note_level_evidence']
+          print('H873_NOTE_CONTEXT',json.dumps({
+              'annotated_events_in_error_context':ctx['annotated_events_in_error_context'],
+              'active_annotated_event_count_by_frame':ctx['active_annotated_event_count_by_frame'],
+              'lost_frames_with_duplicate_pitch_annotations':ctx['lost_frames_with_duplicate_pitch_annotations']
+          },sort_keys=True))
+          # Temporal error episodes are separate within each track and use
+          # only native 256-sample consecutive decision endpoints.
+          tracks=collections.defaultdict(list)
+          for row in rows: tracks[row['track']].append(row)
+          episodes=[]
+          stable_episodes=0
+          for track,rr in tracks.items():
+              rr.sort(key=lambda x:int(x['end_sample']))
+              cur=[]
+              for e in rr:
+                  if cur and int(e['end_sample'])-int(cur[-1]['end_sample'])!=256:
+                      episodes.append((track,cur))
+                      cur=[]
+                  cur.append(e)
+              if cur: episodes.append((track,cur))
+          episode_lens=sorted(len(ep) for _,ep in episodes)
+          for _,ep in episodes:
+              ids={x['annotated_midi_note_ids_json'] for x in ep}
+              stable_episodes+=int(len(ids)==1)
+          print('H873_ERROR_EPISODES',len(episodes),'MEDIAN_FRAMES',statistics.median(episode_lens),
+                'P90_FRAMES',episode_lens[int(0.9*(len(episode_lens)-1))],
+                'MAX_FRAMES',max(episode_lens),'STABLE_NOTE_TRIAD_EPISODES',stable_episodes)
+          comp_n=sum(row['track'].endswith('_comp') for row in rows)
+          print('H873_ACCOMPANIMENT_LOSS_FRAMES',comp_n,'OF',len(rows))
+          # Note-range context: 3 annotated MIDI notes per loss frame.
+          pitches=[int(p) for row in rows for p in json.loads(row['annotated_midi_pitches_json'])]
+          for lo,hi in [(0,39),(40,47),(48,59),(60,71),(72,83),(84,127)]:
+              print('H873_ANNOTATED_PITCH_EXPOSURES',f'{lo}-{hi}',sum(lo<=p<=hi for p in pitches))
+          unique_trios=len(set(row['annotated_midi_note_ids_json'] for row in rows))
+          print('H873_UNIQUE_ANNOTATED_NOTE_TRIOS',unique_trios)
+          assert all(int(r['end_sample'])%256==0 for r in rows)
+          print('H873_NOTE_LEVEL_AGGREGATE_DIAGNOSIS_COMPLETE')
+          PY
