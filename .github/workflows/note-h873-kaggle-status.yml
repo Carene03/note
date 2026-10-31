@@ -25,7 +25,7 @@ jobs:
           python -m pip install -q --disable-pip-version-check 'kaggle==2.2.5'
           ref="tinahandriamarosoa/note-h873-cal56-41195681629"
           status="$(kaggle kernels status "$ref" 2>&1)" || { echo "NOTE_H873_STATUS_QUERY_FAILED"; exit 1; }
-          echo "NOTE_H873_OPAQUE_BIN_RUN_STATUS_CHECK"
+          echo "NOTE_H873_LATEST_PRIVATE_CAL56_STATUS_CHECK"
           echo "$status"
           if [[ "$status" == *"KernelWorkerStatus.COMPLETE"* ]]; then
             echo "NOTE_H873_KAGGLE_KERNEL_COMPLETE"
