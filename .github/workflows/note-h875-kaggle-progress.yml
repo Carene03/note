@@ -1,0 +1,50 @@
+name: NOTE H875 private GPU TRAIN224 progress markers
+"on":
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/note-h875-kaggle-progress.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  progress:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    env:
+      KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Query private Kaggle runtime and show approved H875 markers only
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${KAGGLE_API_TOKEN:-}"
+          python -m pip install --quiet --disable-pip-version-check 'kaggle==2.2.5'
+          ref="tinahandriamarosoa/note-h875-train224-k3-41202366684"
+          kaggle kernels status "$ref"
+          kaggle kernels logs "$ref" > "$RUNNER_TEMP/h875_private_progress.log" 2>&1 || true
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          log=(Path(os.environ['RUNNER_TEMP'])/'h875_private_progress.log').read_text(errors='replace')
+          for key in (
+            "H875_ORIGINAL_H873_SOURCE_AUTHENTICATED",
+            "H875_SELECTOR_TRAIN_DEVICE",
+            "H875_ALL_FROZEN_PRODUCERS_AUTHENTICATED",
+            "H875_SEALED_TRAIN224_CAL56_READY",
+            "H875_TRAIN224_CONFLICT_SET",
+            "H875_EPOCH_TRAIN224",
+            "H875_TRAIN224_CHECKPOINT_FROZEN",
+            "H875_ORIGINAL_H849_H866_BIT_EXACT_CAL56",
+            "H875_TRAIN224_TRAINED_CAL56_EVALUATED",
+            "H875_SIGNED_OUTPUT_READY"):
+              print('H875_STEP',key,'REACHED' if key in log else 'NOT_CONFIRMED')
+          print('H875_GPU_ACTUALLY_USED', 'H875_SELECTOR_TRAIN_DEVICE cuda' in log)
+          for error in ('RuntimeError','AssertionError','FileNotFoundError','ImportError',
+                        'MemoryError','CUDA out of memory'):
+              print('H875_ERROR_CATEGORY',error,error in log)
+          PY
