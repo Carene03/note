@@ -1,0 +1,117 @@
+name: NOTE H875 TRAIN224 learned K3 K4 selector private Kaggle
+"on":
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/note-h875-kaggle-train-submit.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: note-h875-train224-private-kaggle
+  cancel-in-progress: false
+
+jobs:
+  verify_and_submit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 18
+    env:
+      GH_TOKEN: ${{ secrets.NOTE_SOURCE_READ_TOKEN }}
+      KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+      H875_PRIVATE_PIN: e9b9827db057c5545626e51389b1c732bc11afc2
+      H875_DATASET: tinahandriamarosoa/note-h873-source-41195681629
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Check private-source and Kaggle secrets without disclosure
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${GH_TOKEN:-}" && test -n "${KAGGLE_API_TOKEN:-}"
+          gh api repos/Andriamarosoa/note --silent
+          echo "H875_PRIVATE_SOURCE_ACCESS_OK"
+      - name: Retrieve only original immutable private H875 code
+        shell: bash
+        run: |
+          set -euo pipefail
+          work="$RUNNER_TEMP/h875_source"
+          mkdir -p "$work"
+          cd "$work"
+          for name in h875_gate.py test_h875_gate.py h875_kaggle_train.py; do
+            gh api "repos/Andriamarosoa/note/contents/research/exactk256/$name?ref=$H875_PRIVATE_PIN" \
+              --jq '.content' | tr -d '\n' | base64 --decode > "$name"
+          done
+          python -m py_compile h875_gate.py h875_kaggle_train.py test_h875_gate.py
+          echo "H875_PRIVATE_PINNED_CODE_COMPILES"
+      - name: Test learned gate, split isolation and true K4 accounting
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet --disable-pip-version-check 'numpy==1.26.4' 'pytest==9.2.0'
+          python -m pip install --quiet --disable-pip-version-check 'torch==2.5.1' \
+             --index-url 'https://download.pytorch.org/whl/cpu'
+          cd "$RUNNER_TEMP/h875_source"
+          python -m pytest -q test_h875_gate.py
+          echo "H875_CAUSAL_TRAIN_GROUP_TESTS_PASS"
+      - name: Validate original private CAL56 source before reuse
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet --disable-pip-version-check 'kaggle==2.2.5'
+          status="$(kaggle datasets status "$H875_DATASET" 2>&1)"
+          [[ "${status,,}" == "ready" ]] || { echo "H875_PRIVATE_DATASET_NOT_READY"; exit 1; }
+          listing="$(kaggle datasets files "$H875_DATASET" --page-size 40)"
+          [[ "$listing" == *"note_h873_source.bin"* && "$listing" == *"note_h873_source.sha256"* ]] ||
+             { echo "H875_PRIVATE_BUNDLE_INCOMPLETE"; exit 1; }
+          echo "H875_IMMUTABLE_SOURCE_READY"
+      - name: Assemble a single PRIVATE Kaggle GPU training script and submit
+        shell: bash
+        run: |
+          set -euo pipefail
+          work="$RUNNER_TEMP/h875_source"
+          mkdir -p "$work/kernel"
+          python - <<'PY'
+          import os,json
+          from pathlib import Path
+          root=Path(os.environ['RUNNER_TEMP'])/'h875_source'
+          source=(root/'h875_kaggle_train.py').read_text()
+          gate=(root/'h875_gate.py').read_text()
+          # Inject the private gate definition INSIDE main(), AFTER numpy
+          # and torch dependency initialization. Avoid helper-file upload ambiguity.
+          anchor='    from h875_gate import (K3RescueNet,eligible_mask,make_features,'
+          assert source.count(anchor)==1
+          inject=('    import types\n'
+                  '    module=types.ModuleType("h875_gate")\n'
+                  '    exec(compile('+repr(gate)+',"h875_gate.py","exec"),module.__dict__)\n'
+                  '    sys.modules["h875_gate"]=module\n')
+          program=source.replace(anchor,inject+anchor)
+          compile(program,'h875_kaggle_train.py','exec')
+          slug='note-h875-train224-k3-'+os.environ['GITHUB_RUN_ID']
+          kernel=root/'kernel'
+          (kernel/'h875_train.py').write_text(program)
+          meta=dict(id='tinahandriamarosoa/'+slug,title=slug,
+              code_file='h875_train.py',language='python',kernel_type='script',
+              is_private=True,enable_gpu=True,enable_internet=True,
+              dataset_sources=[os.environ['H875_DATASET']],
+              competition_sources=[],kernel_sources=[],model_sources=[])
+          (kernel/'kernel-metadata.json').write_text(json.dumps(meta,indent=2)+'\n')
+          print('H875_GPU_REQUESTED',meta['enable_gpu'])
+          print('H875_PRIVATE_KERNEL_SLUG',meta['id'])
+          PY
+          info="$(kaggle kernels push -p "$work/kernel" 2>&1)" ||
+            { echo "H875_KAGGLE_GPU_SUBMISSION_FAILED"; exit 1; }
+          if [[ "$info" == *"not valid dataset sources"* || "$info" == *"could not be added"* ]]; then
+            echo "H875_SOURCE_ATTACHMENT_REJECTED"
+            exit 1
+          fi
+          echo "$info" | grep -E 'Kernel version [0-9]+ successfully pushed|Please check progress' || true
+          kernel="tinahandriamarosoa/note-h875-train224-k3-$GITHUB_RUN_ID"
+          kaggle kernels status "$kernel"
+          echo "H875_PRIVATE_GPU_TRAINING_SUBMITTED"
+          echo "https://www.kaggle.com/code/$kernel"
+      - name: Verify scope, do not claim results or promote a model
+        run: |
+          echo "TRAIN224 only for fit and selection; untouched CAL56 once after freezing."
+          echo "No FIT80; no future; PCM256; no model promoted."
