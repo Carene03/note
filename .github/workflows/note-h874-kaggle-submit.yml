@@ -1,0 +1,112 @@
+name: NOTE H874 preregistered K3 K4 counterfactual CAL56
+"on":
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/note-h874-kaggle-submit.yml"
+
+permissions:
+  contents: read
+concurrency:
+  group: note-h874-kaggle-original-cal56
+  cancel-in-progress: false
+
+jobs:
+  submit_once:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    env:
+      GH_TOKEN: \${{ secrets.NOTE_SOURCE_READ_TOKEN }}
+      KAGGLE_API_TOKEN: \${{ secrets.KAGGLE_API_TOKEN }}
+      H874_COMMIT: b7c6deb9a05925c36e4f8b86e7a6cf1fc50ce875
+      KAGGLE_SOURCE: tinahandriamarosoa/note-h873-source-41195681629
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Authenticate private NOTE source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "\${GH_TOKEN:-}" && test -n "\${KAGGLE_API_TOKEN:-}"
+          gh api repos/Andriamarosoa/note --silent
+          echo "H874_PRIVATE_NOTE_AUTHENTICATED"
+      - name: Read pinned private policy, tests and entry
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/h874_private"
+          cd "$RUNNER_TEMP/h874_private"
+          for name in h874_policy.py test_h874_policy.py h874_kaggle_entry.py; do
+            gh api "repos/Andriamarosoa/note/contents/research/exactk256/$name?ref=$H874_COMMIT" --jq .content |
+              tr -d '\n' | base64 --decode > "$name"
+          done
+          python - <<'PY'
+          from pathlib import Path
+          assert all(Path(n).is_file() and Path(n).stat().st_size>500 for n in (
+              'h874_policy.py','test_h874_policy.py','h874_kaggle_entry.py'))
+          assert 'def proposals(' in Path('h874_policy.py').read_text()
+          assert 'def h874_main(' in Path('h874_kaggle_entry.py').read_text()
+          print('H874_PRIVATE_PINNED_SOURCE_READY')
+          PY
+      - name: Test policies and prohibit hidden true K4 losses
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -q --disable-pip-version-check 'numpy==1.26.4' 'pytest==9.2.0'
+          cd "$RUNNER_TEMP/h874_private"
+          python -m pytest -q test_h874_policy.py
+          python -m py_compile h874_policy.py h874_kaggle_entry.py
+          echo "H874_CAUSAL_TESTS_PASS"
+      - name: Check original private Kaggle dataset before reuse
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -q --disable-pip-version-check 'kaggle==2.2.5'
+          status="$(kaggle datasets status "$KAGGLE_SOURCE" 2>&1)"
+          [[ "\${status,,}" == "ready" ]] || { echo "H874_PRIVATE_SOURCE_NOT_READY"; exit 1; }
+          files="$(kaggle datasets files "$KAGGLE_SOURCE" --page-size 40)"
+          [[ "$files" == *note_h873_source.bin* && "$files" == *note_h873_source.sha256* ]] ||
+             { echo "H874_PRIVATE_SOURCE_BINARY_OR_SHA_MISSING"; exit 1; }
+          echo "H874_ORIGINAL_PRIVATE_DATASET_READY"
+      - name: Submit one private Kaggle CPU experiment with no model promotion
+        shell: bash
+        run: |
+          set -euo pipefail
+          work="$RUNNER_TEMP/h874_private"
+          mkdir -p "$work/kernel"
+          cat > "$work/kernel/h874_runner.py" <<'PY'
+          import subprocess,sys
+          subprocess.run([sys.executable,'-m','pip','install','--quiet',
+                          'numpy==1.26.4','scipy==1.14.1'],check=True,timeout=1200)
+          PY
+          cat "$work/h874_policy.py" >> "$work/kernel/h874_runner.py"
+          cat "$work/h874_kaggle_entry.py" >> "$work/kernel/h874_runner.py"
+          python -m py_compile "$work/kernel/h874_runner.py"
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          p=Path(os.environ['RUNNER_TEMP'])/'h874_private/kernel'
+          slug='note-h874-k3-router-'+os.environ['GITHUB_RUN_ID']
+          meta=dict(id='tinahandriamarosoa/'+slug,title=slug,
+              code_file='h874_runner.py',language='python',kernel_type='script',
+              is_private=True,enable_gpu=False,enable_internet=True,
+              dataset_sources=[os.environ['KAGGLE_SOURCE']],
+              competition_sources=[],kernel_sources=[],model_sources=[])
+          (p/'kernel-metadata.json').write_text(json.dumps(meta,indent=2)+'\n')
+          print('H874_PRIVATE_CPU_NOTEBOOK',meta['id'])
+          PY
+          result="$(kaggle kernels push -p "$work/kernel" 2>&1)" ||
+             { echo "H874_KAGGLE_SUBMISSION_FAILED"; exit 1; }
+          if [[ "$result" == *"not valid dataset sources"* || "$result" == *"could not be added"* ]]; then
+            echo "H874_KAGGLE_ATTACHMENT_REJECTED"
+            exit 1
+          fi
+          echo "$result" | grep -E 'Kernel version [0-9]+ successfully pushed|Please check progress' || true
+          ref="tinahandriamarosoa/note-h874-k3-router-$GITHUB_RUN_ID"
+          kaggle kernels status "$ref"
+          echo "H874_KAGGLE_SUBMISSION_ACCEPTED"
+          echo "https://www.kaggle.com/code/$ref"
+      - name: Do not claim a score before the Kaggle CAL56 replay
+        run: |
+          echo "H874 diagnostic only; H849 and H866 remain frozen."
