@@ -1,5 +1,5 @@
 name: NOTE H875 private reusable cache Kaggle status and integrity
-# Recheck after private CPU cache source submission for TRAIN224 reuse
+# H875 CPU cache verification after background progress
 "on":
   push:
     branches: [main]
