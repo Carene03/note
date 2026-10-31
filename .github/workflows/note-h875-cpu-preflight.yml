@@ -1,0 +1,131 @@
+name: NOTE H875 CPU-only full preflight and failed-run recovery inspection
+"on":
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/note-h875-cpu-preflight.yml"
+permissions:
+  contents: read
+jobs:
+  cpu_tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ secrets.NOTE_SOURCE_READ_TOKEN }}
+      SOURCE_PIN: 95d0cb6873f0922502201c96421055151db44bfd
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Read pinned private NOTE code without public source publication
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${GH_TOKEN:-}"
+          mkdir -p "$RUNNER_TEMP/h875_private"
+          cd "$RUNNER_TEMP/h875_private"
+          for file in h875_gate.py test_h875_gate.py h875_kaggle_train.py s844_train.py s866_temporal.py; do
+            gh api "repos/Andriamarosoa/note/contents/research/exactk256/$file?ref=$SOURCE_PIN" --jq .content |
+              tr -d '\n' | base64 -d > "$file"
+          done
+          python -m py_compile *.py
+          echo "H875_ALL_5_SOURCE_FILES_PYCOMPILE_OK"
+      - name: CPU dependency setup, six tests and real-emitter ABI crosscheck
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -q --disable-pip-version-check 'numpy==1.26.4' 'pytest==9.2.0'
+          python -m pip install -q --disable-pip-version-check 'torch==2.5.1' --index-url 'https://download.pytorch.org/whl/cpu'
+          cd "$RUNNER_TEMP/h875_private"
+          python -m pytest -q test_h875_gate.py
+          python - <<'PY'
+          import ast,inspect,torch,numpy as np
+          from pathlib import Path
+          from h875_gate import K3RescueNet,make_features,grouped_train_validation,evaluate_gate,probabilities
+          s844=Path('s844_train.py').read_text()
+          assert 'strings.append(st.astype(np.float16))' in s844
+          assert 'sources.append(sa.astype(np.float32))' in s844
+          assert 'specialists.append(sp.astype(np.float32))' in s844
+          print('H875_REAL_S844_DTYPE_CONTRACT_VERIFIED')
+          class Store:
+              def __init__(self,n):
+                  self.features=np.random.default_rng(1).normal(size=(n,235)).astype(np.float32)
+              def take(self,idx):
+                  ii=np.asarray(idx)
+                  return np.concatenate([self.features[ii],np.zeros((len(ii),470),np.float32)],axis=1)
+          n=128
+          a=np.random.default_rng(2).normal(size=(n,7)).astype(np.float32)
+          b=np.random.default_rng(3).normal(size=(n,7)).astype(np.float32)
+          c=np.random.default_rng(4).uniform(0,1,size=(n,6)).astype(np.float16)
+          d=np.random.default_rng(5).normal(size=(n,7)).astype(np.float32)
+          original=(a.copy(),b.copy(),c.copy(),d.copy())
+          x=make_features(a,b,c,d,Store(n),np.arange(n,dtype=np.int64))
+          assert x.shape==(n,732) and x.dtype==np.float32
+          for v,w in zip((a,b,c,d),original):np.testing.assert_array_equal(v,w)
+          model=K3RescueNet()
+          opt=torch.optim.AdamW(model.parameters(),lr=0.0007)
+          batch=torch.from_numpy(x[:64]);y=torch.randint(0,2,(64,),dtype=torch.float32)
+          opt.zero_grad(set_to_none=True)
+          loss=torch.nn.functional.binary_cross_entropy_with_logits(model(batch),y)
+          loss.backward()
+          opt.step()
+          assert np.isfinite(loss.item())
+          p=probabilities(model,x,torch.device('cpu'))
+          assert np.isfinite(p).all() and np.all((p>=0)&(p<=1))
+          print('H875_ONE_REALISTIC_CPU_TRAIN_STEP_VERIFIED',x.shape,'loss_finite')
+          assert 'prepare(cache,True,224,56)' in Path('h875_kaggle_train.py').read_text()
+          print('H875_TRAIN224_FULL_REPREPARE_DETECTED')
+          assert 'torch.__version__' in Path('h875_kaggle_train.py').read_text()
+          print('H875_ORIGINAL_TORCH_NUMERICAL_PARITY_NOT_YET_PROVEN')
+          PY
+          echo "H875_CPU_STATIC_AND_TRAIN_STEP_PASS"
+  cache_listing:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 7
+    env:
+      KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Read failed Kaggle kernel OUTPUT NAMES ONLY without downloads
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${KAGGLE_API_TOKEN:-}"
+          python -m pip install -q --disable-pip-version-check 'kaggle==2.2.5'
+          python - <<'PY'
+          import inspect,collections,os
+          from kaggle.api.kaggle_api_extended import KaggleApi
+          ref='tinahandriamarosoa/note-h875-train224-k3-41202366684'
+          api=KaggleApi()
+          api.authenticate()
+          print('H875_OUTPUT_LIST_METHOD_AVAILABLE',hasattr(api,'kernels_list_output'))
+          if not hasattr(api,'kernels_list_output'):raise SystemExit(0)
+          try:
+              result=api.kernels_list_output(ref)
+          except Exception as e:
+              print('H875_OUTPUT_LIST_STATUS','FAILED',type(e).__name__)
+              raise SystemExit(0)
+          files=getattr(result,'files',None)
+          if files is None and isinstance(result,dict):
+              files=result.get('files')
+          files=files or []
+          print('H875_KAGGLE_STORED_OUTPUT_FILES',len(files))
+          suffixes=collections.Counter()
+          native_cache=0;manifests=0;checkpoint=0
+          for item in files:
+              name=item if isinstance(item,str) else getattr(item,'ref',None) or getattr(item,'name','')
+              name=str(name).lower()
+              for suffix in ('.x.npy','.truth.npz','manifest.json','.pt','h875_report.json'):
+                  if name.endswith(suffix):suffixes[suffix]+=1
+              if 'native256_train224_cal56' in name:native_cache+=1
+              if name.endswith('manifest.json'):manifests+=1
+              if name.endswith('h875_selector_checkpoint.pt'):checkpoint+=1
+          print('H875_SAVED_CACHE_OUTPUT_FILES',native_cache)
+          print('H875_SAVED_NATIVE_X_NPY',suffixes['.x.npy'])
+          print('H875_SAVED_LABEL_NPZ',suffixes['.truth.npz'])
+          print('H875_SAVED_MANIFESTS',manifests)
+          print('H875_SAVED_TRAINED_CHECKPOINTS',checkpoint)
+          print('H875_OUTPUTS_MAY_REQUIRE_PRIVATE_CACHE_MATERIALIZATION')
+          PY
