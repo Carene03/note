@@ -1,0 +1,72 @@
+name: NOTE H875 preflight compiled CPU Kaggle training payload
+"on":
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/note-h875-cpu-payload-preflight.yml"
+permissions:
+  contents: read
+jobs:
+  preflight:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    env:
+      GH_TOKEN: ${{ secrets.NOTE_SOURCE_READ_TOKEN }}
+      PRIVATE_PIN: 0ce68ad3f6ab3bb7db2e428d9b881c41ce7f2fce
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Pull only pinned private learner and verify exact embed compile
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${GH_TOKEN:-}"
+          mkdir -p "$RUNNER_TEMP/h875_compile"
+          cd "$RUNNER_TEMP/h875_compile"
+          for f in h875_gate.py h875_kaggle_train.py test_h875_gate.py; do
+            gh api "repos/Andriamarosoa/note/contents/research/exactk256/$f?ref=$PRIVATE_PIN" --jq .content |
+              tr -d '\n' | base64 -d > "$f"
+          done
+          python - <<'PY'
+          import json,ast,sys
+          from pathlib import Path
+          root=Path.cwd()
+          source=(root/'h875_kaggle_train.py').read_text()
+          gate=(root/'h875_gate.py').read_text()
+          anchor='    from h875_gate import (K3RescueNet,eligible_mask,make_features,'
+          assert source.count(anchor)==1
+          injection=('    import types\n'
+            '    module=types.ModuleType("h875_gate")\n'
+            '    exec(compile('+repr(gate)+',"h875_gate.py","exec"),module.__dict__)\n'
+            '    sys.modules["h875_gate"]=module\n')
+          joined=source.replace(anchor,injection+anchor)
+          compile(joined,'h875_train.py','exec')
+          ast.parse(joined)
+          assert "prepare(cache,True,224,56)" not in joined
+          assert 'h875_native256_cache/manifest.json' in joined
+          assert 'H875_PRIVATE_REUSABLE_NATIVE256_CACHE_V1' in joined
+          assert 'torch==2.5.1' in joined
+          assert 'device=torch.device("cpu")' in joined
+          print('H875_PRIVATE_COMBINED_KAGGLE_TRAINER_COMPILES')
+          print('H875_INPUT_CACHE_READ_ONLY_CONFIRMED')
+          print('H875_CPU_TORCH_PIN_VERIFIED')
+          PY
+      - name: Confirm public coordinator has manual certification trigger and no GPU
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api "repos/Carene03/note/contents/.github/workflows/note-h875-cpu-from-cache-submit.yml?ref=main" \
+            --jq .content | tr -d '\n' | base64 -d > "$RUNNER_TEMP/public_coordinator.yml"
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          text=(Path(os.environ['RUNNER_TEMP'])/'public_coordinator.yml').read_text()
+          assert 'requests/h875/train-cpu-*.txt' in text
+          assert 'H875_CACHE_NOT_COMPLETE_ABSOLUTE_BLOCK' in text
+          assert 'H875_COMPLETED_CACHE_CERTIFICATE_GATE_PASS' in text
+          assert 'enable_gpu=False' in text
+          assert 'kernel_sources=[os.environ[' in text
+          assert 'cancel-in-progress: false' in text
+          print('H875_CPU_COORDINATOR_PREPARED_NOT_TRIGGERED')
+          PY
