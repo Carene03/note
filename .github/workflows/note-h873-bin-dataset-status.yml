@@ -1,0 +1,46 @@
+name: NOTE H873 verify opaque private Kaggle dataset readiness
+"on":
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/note-h873-bin-dataset-status.yml"
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    env:
+      KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Inspect dataset status without exposing private file contents
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${KAGGLE_API_TOKEN:-}"
+          python -m pip install --disable-pip-version-check -q 'kaggle==2.2.5'
+          dataset='tinahandriamarosoa/note-h873-source-41195681629'
+          if result="$(kaggle datasets status "$dataset" 2>&1)"; then
+            echo "NOTE_H873_BIN_DATASET_STATUS_COMMAND_OK"
+            echo "$result"
+          else
+            echo "NOTE_H873_BIN_DATASET_STATUS_COMMAND_NOT_READY"
+            echo "$result" | grep -E 'not found|error|Error|queued|processing|pending' | head -3 || true
+          fi
+          if listing="$(kaggle datasets files "$dataset" --page-size 40 2>&1)"; then
+            if [[ "$listing" == *"note_h873_source.bin"* ]]; then
+              echo "NOTE_H873_OPAQUE_BIN_FILE_PRESENT"
+            else
+              echo "NOTE_H873_OPAQUE_BIN_FILE_NOT_LISTED"
+            fi
+            if [[ "$listing" == *"note_h873_source.sha256"* ]]; then
+              echo "NOTE_H873_OPAQUE_SHA_PRESENT"
+            else
+              echo "NOTE_H873_OPAQUE_SHA_NOT_LISTED"
+            fi
+          else
+            echo "NOTE_H873_BIN_FILES_NOT_AVAILABLE"
+          fi
