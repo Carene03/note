@@ -1,4 +1,5 @@
 name: NOTE H875 CPU-only full preflight and failed-run recovery inspection
+# Verify cache-only data reader (no original JAMS) on H875 corrected source.
 "on":
   push:
     branches: [main]
@@ -12,7 +13,7 @@ jobs:
     timeout-minutes: 15
     env:
       GH_TOKEN: ${{ secrets.NOTE_SOURCE_READ_TOKEN }}
-      SOURCE_PIN: 0ce68ad3f6ab3bb7db2e428d9b881c41ce7f2fce
+      SOURCE_PIN: 5bc414903aeb44a65d470978fcd418a392876c2c
     steps:
       - uses: actions/setup-python@v5
         with:
