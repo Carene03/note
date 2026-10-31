@@ -1,0 +1,1 @@
+Request a single H873 CAL56 re-submission with opaque note_h873_source.bin, ready-checked private Kaggle dataset, original PCM256 and immutable SHA-pinned scientific sources. Prior dataset 41194575669 was auto-extracted, so do not reuse its invalid unpacked layout.
