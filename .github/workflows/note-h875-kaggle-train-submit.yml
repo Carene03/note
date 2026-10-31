@@ -17,7 +17,7 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.NOTE_SOURCE_READ_TOKEN }}
       KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
-      H875_PRIVATE_PIN: a3d50558ec74a3c9f7380c5eb67ef2330acf1579
+      H875_PRIVATE_PIN: 4f3bd466f990906f3d5aa8d9a00bbcdadfce2be1
       H875_DATASET: tinahandriamarosoa/note-h873-source-41195681629
     steps:
       - uses: actions/setup-python@v5
