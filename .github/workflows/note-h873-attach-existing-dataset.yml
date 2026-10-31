@@ -8,7 +8,7 @@ name: NOTE H873 attach completed private dataset to existing Kaggle kernel
 permissions:
   contents: read
 concurrency:
-  group: note-h873-attach-existing-41194575669
+  group: note-h873-attach-existing-41195681629
   cancel-in-progress: false
 jobs:
   attach_and_relaunch:
@@ -27,8 +27,8 @@ jobs:
           set -euo pipefail
           test -n "${KAGGLE_API_TOKEN:-}" && test -n "${GH_TOKEN:-}"
           python -m pip install --disable-pip-version-check -q 'kaggle==2.2.5'
-          dataset='tinahandriamarosoa/note-h873-source-41194575669'
-          kernel='tinahandriamarosoa/note-h873-cal56-41194575669'
+          dataset='tinahandriamarosoa/note-h873-source-41195681629'
+          kernel='tinahandriamarosoa/note-h873-cal56-41195681629'
           status="$(kaggle datasets status "$dataset" 2>&1)" || { echo 'NOTE_H873_DATASET_STATUS_UNAVAILABLE'; exit 1; }
           echo "$status"
           if [[ "$status" != *COMPLETE* && "$status" != *READY* && "$status" != *complete* && "$status" != *ready* && "$status" != *success* ]]; then
@@ -41,10 +41,10 @@ jobs:
           echo 'NOTE_H873_PRIVATE_DATASET_READY'
           mkdir -p "$RUNNER_TEMP/h873_existing_kernel"
           cd "$RUNNER_TEMP/h873_existing_kernel"
-          pinned='58c528c8334baa5c623bd5eafa4a9dc2d129385e'
+          pinned='ea3f52376567608a8ea9385e54c5391216c4837c'
           path='research/exactk256/h873/kaggle_bridge/h873_dataset_runner.py'
           blob="$(gh api "repos/Andriamarosoa/note/contents/$path?ref=$pinned" --jq .sha)" || { echo 'NOTE_H873_READ_TOKEN_FAILED'; exit 1; }
-          test "$blob" = '6612144ac5ed57d224697bbaea77324408b5ea36' || { echo 'NOTE_H873_RUNNER_BLOB_SHA_DRIFT'; exit 1; }
+          test "$blob" = 'bc880778c73af7d1d8acf0597652a94fd2f0beb4' || { echo 'NOTE_H873_RUNNER_BLOB_SHA_DRIFT'; exit 1; }
           gh api "repos/Andriamarosoa/note/contents/$path?ref=$pinned" --jq .content | tr -d '\n' | base64 -d > h873_dataset_runner.py
           python - <<'PY'
           import json
@@ -52,8 +52,8 @@ jobs:
           src=Path('h873_dataset_runner.py').read_text()
           assert 'SOURCE_COMMIT = "05ef09cf8d750b3dc0220d38f37b56f6328e52f5"' in src
           assert '325278' in src and '256' in src
-          dataset='tinahandriamarosoa/note-h873-source-41194575669'
-          slug='note-h873-cal56-41194575669'
+          dataset='tinahandriamarosoa/note-h873-source-41195681629'
+          slug='note-h873-cal56-41195681629'
           Path('kernel-metadata.json').write_text(json.dumps(dict(
               id='tinahandriamarosoa/'+slug, title=slug,
               code_file='h873_dataset_runner.py', language='python',
