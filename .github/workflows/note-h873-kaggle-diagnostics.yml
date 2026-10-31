@@ -46,7 +46,7 @@ jobs:
                   t=re.sub(r'(?i)(authorization|bearer)\s*[:=]?\s*\S+','[AUTH_REDACTED]',t)
                   t=re.sub(r'(?i)(x-access-token|ghp_|github_pat_)\S*','[TOKEN_REDACTED]',t)
                   matches.append(t[:220])
-          print('NOTE_H873_PRIVATE_LOG_LINES',len(lines))
+          print('NOTE_H873_PRIVATE_LOG_LINES_V2',len(lines))
           print('NOTE_H873_DIAGNOSTIC_SIGNATURES_BEGIN')
           for t in matches[-12:]:
               print(t)
