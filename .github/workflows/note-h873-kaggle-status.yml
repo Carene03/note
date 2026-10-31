@@ -1,0 +1,35 @@
+name: NOTE H873 private Kaggle execution status
+"on":
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/note-h873-kaggle-status.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  status:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    env:
+      KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Check H873 status via Kaggle API without disclosing private outputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${KAGGLE_API_TOKEN:-}" || { echo "KAGGLE_SECRET_MISSING"; exit 1; }
+          python -m pip install -q --disable-pip-version-check 'kaggle==2.2.5'
+          ref="tinahandriamarosoa/note-h873-cal56-41194575669"
+          status="$(kaggle kernels status "$ref" 2>&1)" || { echo "NOTE_H873_STATUS_QUERY_FAILED"; exit 1; }
+          echo "$status"
+          if [[ "$status" == *"KernelWorkerStatus.COMPLETE"* ]]; then
+            echo "NOTE_H873_KAGGLE_KERNEL_COMPLETE"
+          elif [[ "$status" == *"KernelWorkerStatus.ERROR"* || "$status" == *"KernelWorkerStatus.CANCELLED"* ]]; then
+            echo "NOTE_H873_KAGGLE_KERNEL_FAILED"
+          else
+            echo "NOTE_H873_KAGGLE_KERNEL_NOT_FINISHED"
+          fi
