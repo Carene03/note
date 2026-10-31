@@ -47,6 +47,8 @@ jobs:
           print('NOTE_H873_DATASET_LISTING_LINES',len(listing.splitlines()))
           print('NOTE_H873_ARCHIVE_LISTED', 'note_h873_source.tar.gz' in listing)
           print('NOTE_H873_CHECKSUM_LISTED', 'note_h873_source.sha256' in listing)
+          for ext in ('.py','.pt','.json','.csv','.tar.gz','.zip','.bin','.sha256'):
+              print('NOTE_H873_LIST_EXTENSION',ext,listing.count(ext))
           if target not in sources:
               sys.exit(2)
           PY
