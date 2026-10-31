@@ -89,4 +89,19 @@ jobs:
           print('H875_TRAINED_SELECTOR_CHECKPOINTS',kinds['h875_selector_checkpoint.pt'])
           print('H875_SAVED_FEATURE_CACHE_APPROX_BYTES',size_cache)
           print('H875_CACHE_POSSIBLY_REUSABLE',kinds['.x.npy']==280 and kinds['.truth.npz']==280)
+          # Cross-check with the supported Kaggle CLI listing command.
+          import subprocess,io,csv
+          proc=subprocess.run(['kaggle','kernels','files',ref,'--page-size','200','-v'],
+                  capture_output=True,text=True,timeout=60)
+          print('H875_KERNELS_FILES_CLI_RC',proc.returncode)
+          if proc.returncode==0:
+              parsed=list(csv.DictReader(io.StringIO(proc.stdout)))
+              print('H875_KERNELS_FILES_CLI_ROWS',len(parsed))
+              if parsed:
+                  print('H875_KERNELS_FILES_CLI_COLUMNS',','.join(parsed[0].keys()))
+                  listed='\n'.join(str(row) for row in parsed).lower()
+                  print('H875_KERNELS_FILES_PAGE_CONTAINS_X_NPY','.x.npy' in listed)
+                  print('H875_KERNELS_FILES_PAGE_CONTAINS_MANIFEST','manifest.json' in listed)
+          else:
+              print('H875_KERNELS_FILES_CLI_FAILED_COARSE')
           PY
