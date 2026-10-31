@@ -1,0 +1,29 @@
+name: NOTE public runner smoke test
+"on":
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/note-runner-smoke.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - name: Verify public GitHub-hosted runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "NOTE_PUBLIC_RUNNER_STARTED"
+          echo "GitHub repository: $GITHUB_REPOSITORY"
+          echo "GitHub event: $GITHUB_EVENT_NAME"
+          test "$GITHUB_REPOSITORY" = "Carene03/note"
+          python3 - <<'PY'
+          import platform
+          print("NOTE_PUBLIC_RUNNER_PYTHON", platform.python_version())
+          print("NOTE_PUBLIC_RUNNER_PASS")
+          PY
