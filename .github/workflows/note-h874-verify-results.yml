@@ -1,0 +1,84 @@
+name: NOTE H874 verify Kaggle CAL56 K3 K4 corrected versus harmed
+"on":
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/note-h874-verify-results.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check_and_verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 9
+    env:
+      KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Check private Kaggle status then verify complete H874 report
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${KAGGLE_API_TOKEN:-}"
+          python -m pip install --disable-pip-version-check -q 'kaggle==2.2.5'
+          ref='tinahandriamarosoa/note-h874-k3-router-41199837130'
+          state="$(kaggle kernels status "$ref")"
+          echo "$state"
+          if [[ "$state" == *'KernelWorkerStatus.ERROR'* || "$state" == *'KernelWorkerStatus.CANCELLED'* ]]; then
+            echo 'H874_KAGGLE_KERNEL_FAILED'
+            exit 1
+          fi
+          if [[ "$state" != *'KernelWorkerStatus.COMPLETE'* ]]; then
+            echo 'H874_KAGGLE_NOT_FINISHED_NO_SCIENCE_CLAIM'
+            exit 0
+          fi
+          mkdir -p "$RUNNER_TEMP/h874_final"
+          kaggle kernels output "$ref" -p "$RUNNER_TEMP/h874_final" \
+            --file-pattern '^(h874_report.json|h874_report.md|h874_manifest.json)$' \
+            > "$RUNNER_TEMP/h874_private_output.log" 2>&1
+          python - <<'PY'
+          import os,json,hashlib
+          from pathlib import Path
+          out=Path(os.environ['RUNNER_TEMP'])/'h874_final'
+          required=('h874_report.json','h874_report.md','h874_manifest.json')
+          assert all((out/n).is_file() for n in required), 'Missing H874 output'
+          m=json.loads((out/'h874_manifest.json').read_text())
+          r=json.loads((out/'h874_report.json').read_text())
+          assert m['schema']=='H874_PRIVATE_CAL56_VERIFIED_OUTPUT_V1'
+          assert m['complete'] is True and m['no_training'] is True
+          assert m['fit80_opened'] is False and m['promoted'] is False
+          assert m['original_source_sha']=='05ef09cf8d750b3dc0220d38f37b56f6328e52f5'
+          assert m['frames']==325278 and m['tracks']==56 and m['hop']==256
+          for name,digest in m['hashes'].items():
+              assert name in required[:-1]
+              assert hashlib.sha256((out/name).read_bytes()).hexdigest()==digest,name
+          assert r['schema']=='H874_CAL56_PREDECLARED_CAUSAL_ROUTER_V1'
+          assert (r['frames'],r['tracks'],r['sample_rate'],r['hop'])==(325278,56,44100,256)
+          assert r['original_H849_correct']==219457 and r['original_H866_correct']==229758
+          assert r['original_predictions_bit_identical'] is True
+          assert r['fit80_opened'] is False and r['promoted'] is False
+          assert r['model_trained'] is False and r['future_samples']==r['hold_samples']==0
+          expected=('revert_all_K3toK4','two_head_K3_agreement',
+                    'conservative_dual_margin','string_overcount_concordance')
+          assert tuple(r['policies_preregistered'])==expected
+          assert set(r['results'])==set(expected)
+          for name in expected:
+              z=r['results'][name]
+              assert z['net']==z['fixed']-z['harmed']
+              assert z['candidate_correct']==229758+z['net']
+              assert z['true_K3_rescued']==z['fixed']
+              assert z['true_K4_deteriorated']==z['harmed']
+              assert len(z['by_true_k'])==7
+              assert z['fit80_opened'] is False and z['promoted'] is False
+              print('H874_RESULT',name,'fixed_K3',z['fixed'],'harmed_true_K4',
+                    z['harmed'],'net',z['net'],'correct_all',z['candidate_correct'])
+              for style,d in sorted(z['by_accompaniment_style'].items()):
+                  print('H874_COMP',name,style,'fixed',d['fixed'],'harmed',d['harmed'],
+                        'net',d['net'])
+          print('H874_ALL_COUNTERFACTUALS_CRYPTOGRAPHICALLY_VERIFIED')
+          print('H874_NO_MODEL_PROMOTION')
+          PY
