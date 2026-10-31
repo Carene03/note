@@ -1,0 +1,73 @@
+name: NOTE H875 private reusable cache Kaggle status and integrity
+"on":
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/note-h875-cache-status.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  status:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    env:
+      KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Check CPU-only cached source status and certificate
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${KAGGLE_API_TOKEN:-}"
+          python -m pip install -q --disable-pip-version-check 'kaggle==2.2.5'
+          ref="tinahandriamarosoa/note-h875-cpu-cache-41208886044"
+          status="$(kaggle kernels status "$ref")"
+          echo "$status"
+          if [[ "$status" == *"KernelWorkerStatus.ERROR"* || "$status" == *"KernelWorkerStatus.CANCELLED"* ]]; then
+            echo "H875_CACHE_PREPARATION_FAILED"
+            kaggle kernels logs "$ref" > "$RUNNER_TEMP/h875_cache_errors.log" 2>&1 || true
+            python - <<'PY'
+          import os
+          from pathlib import Path
+          blob=(Path(os.environ['RUNNER_TEMP'])/'h875_cache_errors.log').read_text(errors='replace')
+          for error in ('ValueError','AssertionError','RuntimeError','FileNotFoundError',
+                        'OSError','MemoryError','No space left on device','CUDA'):
+              print('H875_CACHE_COARSE_ERROR',error,error in blob)
+          PY
+            exit 1
+          fi
+          if [[ "$status" != *"KernelWorkerStatus.COMPLETE"* ]]; then
+            echo "H875_CACHE_KAGGLE_NOT_COMPLETED"
+            exit 0
+          fi
+          mkdir -p "$RUNNER_TEMP/h875_cache_cert"
+          kaggle kernels output "$ref" -p "$RUNNER_TEMP/h875_cache_cert" \
+             --file-pattern '(^|/)h875_cache_certificate[.]json$' \
+             > "$RUNNER_TEMP/private_cache_certificate_download.log" 2>&1
+          python - <<'PY'
+          import os,json,re
+          from pathlib import Path
+          root=Path(os.environ['RUNNER_TEMP'])/'h875_cache_cert'
+          certs=list(root.rglob('h875_cache_certificate.json'))
+          assert len(certs)==1,'H875 private cache certificate unavailable'
+          x=json.loads(certs[0].read_text())
+          assert x['schema']=='H875_PRIVATE_REUSABLE_NATIVE256_CACHE_V1'
+          assert x['complete'] is True
+          assert (x['training_tracks'],x['calibration_tracks'])==(224,56)
+          assert (x['train_frames'],x['cal_frames'])==(1183462,325278)
+          assert x['validated_rows']==280 and x['validated_files']==560
+          assert (x['sample_rate'],x['new_samples_per_decision'])==(44100,256)
+          assert all(re.fullmatch(r'[0-9a-f]{64}',x[k]) for k in (
+             'input_bundle_sha256','original_cache_manifest_sha256'))
+          assert x['science_source_commit']=='05ef09cf8d750b3dc0220d38f37b56f6328e52f5'
+          assert x['fit80_opened'] is False and x['model_trained'] is False
+          assert x['promoted'] is False and x['future_samples']==x['hold_samples']==0
+          assert x['total_feature_and_label_bytes']>=10_000_000_000
+          print('H875_CACHE_PRIVATE_CERTIFICATE_VERIFIED')
+          print('H875_CACHE_FILES_AND_SHA_VERIFIED',x['validated_files'])
+          print('H875_CACHE_BYTES_VERIFIED',x['total_feature_and_label_bytes'])
+          print('H875_CACHE_READY_FOR_PRIVATE_CPU_TRAINING')
+          PY
