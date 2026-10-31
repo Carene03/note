@@ -1,0 +1,78 @@
+name: NOTE H875 verify reusable saved acoustic cache sample CPU only
+"on":
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/note-h875-cache-sample.yml"
+permissions:
+  contents: read
+jobs:
+  verify_cache_sample:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    env:
+      KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Read saved feature manifest, fetch a single smallest native256 feature file
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${KAGGLE_API_TOKEN:-}"
+          python -m pip install -q --disable-pip-version-check 'kaggle==2.2.5'
+          python - <<'PY'
+          import os,subprocess,re,json,hashlib
+          from pathlib import Path
+          ref='tinahandriamarosoa/note-h875-train224-k3-41202366684'
+          temp=Path(os.environ['RUNNER_TEMP'])
+          root=temp/'h875_manifest_probe'
+          root.mkdir()
+          cmd=['kaggle','kernels','output',ref,'-p',str(root),
+               '--file-pattern',r'(^|/)manifest[.]json$']
+          result=subprocess.run(cmd,capture_output=True,text=True,timeout=240)
+          print('H875_MANIFEST_RETRIEVAL_RC',result.returncode)
+          if result.returncode:raise SystemExit(0)
+          candidates=[x for x in root.rglob('manifest.json')
+                      if 'native256_train224_cal56' in str(x)]
+          print('H875_SAVED_CACHE_MANIFEST_CANDIDATES',len(candidates))
+          if len(candidates)!=1:raise SystemExit(0)
+          manifest=json.loads(candidates[0].read_text())
+          rows=manifest.get('rows') or []
+          print('H875_SAVED_CACHE_TRAIN_FILES',manifest.get('train_files'))
+          print('H875_SAVED_CACHE_CAL_FILES',manifest.get('cal_files'))
+          print('H875_SAVED_CACHE_ROWS',len(rows))
+          print('H875_SAVED_CACHE_HOP',manifest.get('frame_hop'))
+          print('H875_SAVED_CACHE_FIT80_OPENED',manifest.get('outer80_opened'))
+          print('H875_SAVED_CACHE_SAMPLE_RATE_REFERENCE',44100)
+          if not (len(rows)==280 and manifest.get('train_files')==224 and
+                  manifest.get('cal_files')==56 and manifest.get('outer80_opened')==0 and
+                  manifest.get('frame_hop')==256):
+              raise SystemExit(0)
+          assert len({r['name'] for r in rows})==280
+          assert all(len(r['features_sha256'])==64 and
+                     len(r['labels_sha256'])==64 for r in rows)
+          sample=min(rows,key=lambda r:r['frames'])
+          name=sample['name']
+          # Anchored to exactly one known private entry from the saved manifest.
+          pattern=re.escape(name)+r'[.]x[.]npy$'
+          target=temp/'single_feature_probe'
+          target.mkdir()
+          fetch=subprocess.run(['kaggle','kernels','output',ref,
+             '-p',str(target),'--file-pattern',pattern],
+             capture_output=True,text=True,timeout=240)
+          files=list(target.rglob(name+'.x.npy'))
+          print('H875_ONE_SAVED_FEATURE_DOWNLOAD_RC',fetch.returncode)
+          print('H875_ONE_SAVED_FEATURE_FOUND',len(files)==1)
+          if len(files)==1:
+              h=hashlib.sha256()
+              with files[0].open('rb') as f:
+                  for chunk in iter(lambda:f.read(1048576),b''):h.update(chunk)
+              print('H875_ONE_SAVED_FEATURE_SHA256_MATCH',
+                    h.hexdigest()==sample['features_sha256'])
+              print('H875_ONE_SAVED_FEATURE_SIZE_BYTES',files[0].stat().st_size)
+              if h.hexdigest()!=sample['features_sha256']:raise SystemExit(2)
+          else:
+              print('H875_SAVED_CACHE_NEEDS_FURTHER_RECOVERY_WORK')
+          PY
