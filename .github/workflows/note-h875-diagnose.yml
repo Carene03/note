@@ -1,4 +1,5 @@
 name: NOTE H875 classify private Kaggle training failure
+# Forensic post-mortem for single CPU model notebook, no resubmission.
 "on":
   push:
     branches: [main]
@@ -22,7 +23,7 @@ jobs:
           set -euo pipefail
           test -n "${KAGGLE_API_TOKEN:-}"
           python -m pip install --quiet --disable-pip-version-check 'kaggle==2.2.5'
-          ref='tinahandriamarosoa/note-h875-train224-k3-41202366684'
+          ref='tinahandriamarosoa/note-h875-cpu-trained-41212687143'
           kaggle kernels status "$ref"
           kaggle kernels logs "$ref" > "$RUNNER_TEMP/private_h875_logs.json" 2>&1 || true
           python - <<'PY'
