@@ -1,0 +1,69 @@
+name: NOTE H873 - submit private CAL56 science to Kaggle
+"on":
+  push:
+    branches: [main]
+    paths:
+      - "requests/h873/submit-*.txt"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: note-h873-kaggle-science-submit
+  cancel-in-progress: false
+
+jobs:
+  submit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+      GH_TOKEN: ${{ secrets.NOTE_SOURCE_READ_TOKEN }}
+      NOTE_SOURCE_BRANCH: codex/note-exactk-h873-kaggle-256-20261031
+      NOTE_BRIDGE_SHA: 58c528c8334baa5c623bd5eafa4a9dc2d129385e
+      NOTE_SCIENCE_SHA: 05ef09cf8d750b3dc0220d38f37b56f6328e52f5
+    steps:
+      - name: Fail closed unless both private access tokens exist
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${KAGGLE_API_TOKEN:-}" || { echo "Missing KAGGLE_API_TOKEN"; exit 1; }
+          test -n "${GH_TOKEN:-}" || { echo "Missing NOTE_SOURCE_READ_TOKEN"; exit 1; }
+          echo "NOTE_H873_REQUIRED_SECRETS_PRESENT"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install official Kaggle control-plane CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check -q "kaggle==2.2.5"
+      - name: Retrieve private NOTE code to ephemeral runner only
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh repo clone Andriamarosoa/note "$RUNNER_TEMP/note-private" -- \
+            --filter=blob:none --depth=50 --single-branch --branch "$NOTE_SOURCE_BRANCH"
+          cd "$RUNNER_TEMP/note-private"
+          git cat-file -e "$NOTE_BRIDGE_SHA^{commit}" || { echo "Pinned bridge commit unavailable"; exit 1; }
+          git cat-file -e "$NOTE_SCIENCE_SHA^{commit}" || { echo "Pinned science commit unavailable"; exit 1; }
+          git checkout --detach "$NOTE_BRIDGE_SHA"
+          test "$(git rev-parse HEAD)" = "$NOTE_BRIDGE_SHA"
+          test -f research/exactk256/h873/kaggle_bridge/prepare_and_submit.py
+          test -f research/exactk256/h873/kaggle_bridge/h873_dataset_runner.py
+          echo "NOTE_H873_PINNED_PRIVATE_SOURCE_READY"
+      - name: Stage a PRIVATE Kaggle dataset and submit the native256 replay
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/note-private"
+          python research/exactk256/h873/kaggle_bridge/prepare_and_submit.py \
+            --kaggle-owner "tinahandriamarosoa" \
+            --run-id "$GITHUB_RUN_ID" \
+            --stage "$RUNNER_TEMP/h873_stage_$GITHUB_RUN_ID" \
+            --runner research/exactk256/h873/kaggle_bridge/h873_dataset_runner.py
+          echo "NOTE_H873_KAGGLE_SUBMISSION_REQUESTED"
+      - name: Science is not complete until private Kaggle result is verified
+        run: |
+          echo "This GitHub run only submits H873 to Kaggle."
+          echo "No new Exact-K score is claimed. The Kaggle kernel must be verified separately."
