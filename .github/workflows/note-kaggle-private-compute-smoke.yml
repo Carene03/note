@@ -47,7 +47,7 @@ jobs:
               "pathlib.Path('/kaggle/working/NOTE_SMOKE_OK.json').write_text(json.dumps(dict(status='success', source='Kaggle CPU', test='public-bridge-private-kernel')))\n"
               "print('NOTE_KAGGLE_COMPUTE_EXECUTED')\n")
           meta=dict(id="tinahandriamarosoa/"+slug,
-              title="NOTE private compute smoke "+os.environ["GITHUB_RUN_ID"],
+              title=slug,
               code_file="smoke.py",language="python",kernel_type="script",
               is_private=True,enable_gpu=False,enable_internet=False,
               dataset_sources=[],competition_sources=[],kernel_sources=[],model_sources=[])
