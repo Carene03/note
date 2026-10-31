@@ -1,0 +1,52 @@
+name: NOTE H873 private Kaggle attachment metadata inspection
+"on":
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/note-h873-kaggle-attachment-inspection.yml
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 7
+    env:
+      KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Inspect attached dataset references without private file disclosure
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${KAGGLE_API_TOKEN:-}"
+          python -m pip install --disable-pip-version-check -q 'kaggle==2.2.5'
+          kernel='tinahandriamarosoa/note-h873-cal56-41194575669'
+          dataset='tinahandriamarosoa/note-h873-source-41194575669'
+          mkdir -p "$RUNNER_TEMP/h873_pull"
+          kaggle kernels pull "$kernel" -p "$RUNNER_TEMP/h873_pull" -m > /dev/null
+          kaggle datasets files "$dataset" -v --page-size=40 > "$RUNNER_TEMP/h873_ds_files.csv" 2>&1 || true
+          python - "$RUNNER_TEMP/h873_pull" "$RUNNER_TEMP/h873_ds_files.csv" <<'PY'
+          import json,sys,csv
+          from pathlib import Path
+          root=Path(sys.argv[1])
+          files=list(root.rglob('kernel-metadata.json'))
+          if len(files)!=1:
+              print("NOTE_H873_METADATA_NOT_FOUND",len(files))
+              sys.exit(1)
+          meta=json.loads(files[0].read_text())
+          sources=meta.get('dataset_sources') or []
+          target='tinahandriamarosoa/note-h873-source-41194575669'
+          print('NOTE_H873_KERNEL_PRIVATE', meta.get('is_private'))
+          print('NOTE_H873_KERNEL_TYPE', meta.get('kernel_type'))
+          print('NOTE_H873_METADATA_DATASET_COUNT', len(sources))
+          print('NOTE_H873_TARGET_SOURCE_ATTACHED', target in sources)
+          print('NOTE_H873_INPUT_FILENAME_IN_SCRIPT','note_h873_source.tar.gz' in ''.join(p.read_text(errors='replace') for p in root.glob('*.py')))
+          listing=Path(sys.argv[2]).read_text(errors='replace')
+          print('NOTE_H873_DATASET_LISTING_LINES',len(listing.splitlines()))
+          print('NOTE_H873_ARCHIVE_LISTED', 'note_h873_source.tar.gz' in listing)
+          print('NOTE_H873_CHECKSUM_LISTED', 'note_h873_source.sha256' in listing)
+          if target not in sources:
+              sys.exit(2)
+          PY
