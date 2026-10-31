@@ -1,0 +1,57 @@
+name: NOTE H875 classify private Kaggle training failure
+"on":
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/note-h875-diagnose.yml"
+permissions:
+  contents: read
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    env:
+      KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Print sanitized terminal Python exception without private paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${KAGGLE_API_TOKEN:-}"
+          python -m pip install --quiet --disable-pip-version-check 'kaggle==2.2.5'
+          ref='tinahandriamarosoa/note-h875-train224-k3-41202366684'
+          kaggle kernels status "$ref"
+          kaggle kernels logs "$ref" > "$RUNNER_TEMP/private_h875_logs.json" 2>&1 || true
+          python - <<'PY'
+          import os,json,re
+          from pathlib import Path
+          blob=(Path(os.environ['RUNNER_TEMP'])/'private_h875_logs.json').read_text(errors='replace')
+          lines=[]
+          try:
+              data=json.loads(blob)
+              if isinstance(data,list):
+                  for row in data:
+                      lines.extend(str(row.get('data','')).splitlines())
+              else:
+                  lines=blob.splitlines()
+          except Exception:
+              lines=blob.splitlines()
+          relevant=[]
+          for line in lines:
+              s=line.strip()
+              if not s:continue
+              if ('Traceback' in s or 'ValueError:' in s or 'RuntimeError:' in s or
+                  'AssertionError:' in s or 'FileNotFoundError:' in s or
+                  'Error:' in s or 'H875_' in s):
+                  if any(token in s.lower() for token in ('token','authorization','password','secret')):continue
+                  s=re.sub(r'/kaggle/[^ :]+','[PRIVATE_PATH]',s)
+                  s=re.sub(r'https?://\S+','[PRIVATE_URL]',s)
+                  relevant.append(s[:200])
+          print('H875_PRIVATE_LOG_LINE_COUNT',len(lines))
+          print('H875_DIAGNOSTIC_SIGNATURES_BEGIN')
+          for item in relevant[-24:]:print(item)
+          print('H875_DIAGNOSTIC_SIGNATURES_END')
+          PY
