@@ -1,0 +1,56 @@
+name: NOTE H873 private Kaggle error classification
+"on":
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/note-h873-kaggle-diagnostics.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 7
+    env:
+      KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Read private Kaggle logs and emit only sanitized error signatures
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${KAGGLE_API_TOKEN:-}"
+          python -m pip install -q --disable-pip-version-check 'kaggle==2.2.5'
+          ref="tinahandriamarosoa/note-h873-cal56-41194575669"
+          status="$(kaggle kernels status "$ref" 2>&1)"
+          echo "$status"
+          kaggle kernels logs "$ref" > "$RUNNER_TEMP/kaggle-private.log" 2>&1 || true
+          python - "$RUNNER_TEMP/kaggle-private.log" <<'PY'
+          import re,sys
+          from pathlib import Path
+          p=Path(sys.argv[1])
+          lines=p.read_text(errors='replace').splitlines()
+          markers=('ModuleNotFoundError','FileNotFoundError','ImportError','RuntimeError',
+                   'AssertionError','PermissionError','OSError','TypeError','ValueError',
+                   'AttributeError','Exception:', 'Error:', 'Failed', 'Traceback',
+                   'ERROR','Error', 'Killed','timed out','Out of memory')
+          matches=[]
+          for line in lines:
+              t=line.strip()
+              if any(s in t for s in markers):
+                  if 'TOKEN' in t.upper() or 'SECRET' in t.upper() or 'PASSWORD' in t.upper():
+                      continue
+                  t=re.sub(r'https?://\S+','[URL]',t)
+                  t=re.sub(r'(?i)(authorization|bearer)\s*[:=]?\s*\S+','[AUTH_REDACTED]',t)
+                  t=re.sub(r'(?i)(x-access-token|ghp_|github_pat_)\S*','[TOKEN_REDACTED]',t)
+                  matches.append(t[:220])
+          print('NOTE_H873_PRIVATE_LOG_LINES',len(lines))
+          print('NOTE_H873_DIAGNOSTIC_SIGNATURES_BEGIN')
+          for t in matches[-12:]:
+              print(t)
+          print('NOTE_H873_DIAGNOSTIC_SIGNATURES_END')
+          if not matches:
+              print('NOTE_H873_NO_RECOGNIZED_ERROR_SIGNATURE; inspect Kaggle private notebook')
+          PY
