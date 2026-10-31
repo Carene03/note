@@ -1,0 +1,2 @@
+H873 CAL56 scientific replay — retry 02 only after confirmed fix of Git lazy fetch authentication.
+References immutable. Submit private Kaggle dataset and kernel. Keep FIT80 closed and follow native PCM256.
