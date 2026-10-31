@@ -1,0 +1,85 @@
+name: NOTE H875 private CPU saved-cache mount probe
+"on":
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/note-h875-cpu-cache-mount.yml"
+permissions:
+  contents: read
+jobs:
+  submit_cpu_only:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    env:
+      KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Submit private CPU-only saved feature cache inspection
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${KAGGLE_API_TOKEN:-}"
+          python -m pip install -q --disable-pip-version-check 'kaggle==2.2.5'
+          mkdir -p "$RUNNER_TEMP/h875_cpu_probe"
+          python - <<'PY'
+          import os,json
+          from pathlib import Path
+          root=Path(os.environ['RUNNER_TEMP'])/'h875_cpu_probe'
+          (root/'cache_probe.py').write_text("""
+          import hashlib, json
+          from pathlib import Path
+          results={'version':1,'gpu_used':False,'cache_found':False,
+                   'train_count':0,'cal_count':0,'x_files':0,'truth_files':0,
+                   'sample_x_sha_match':False,'sample_label_sha_match':False}
+          candidates=list(Path('/kaggle/input').rglob('native256_train224_cal56/manifest.json'))
+          results['cache_manifest_count']=len(candidates)
+          if len(candidates)==1:
+              manifest=json.loads(candidates[0].read_text())
+              root=candidates[0].parent
+              rows=manifest.get('rows') or []
+              results['train_count']=manifest.get('train_files')
+              results['cal_count']=manifest.get('cal_files')
+              results['hop']=manifest.get('frame_hop')
+              results['fit80_opened']=manifest.get('outer80_opened')
+              results['cache_found']=(len(rows)==280 and
+                manifest.get('train_files')==224 and manifest.get('cal_files')==56 and
+                manifest.get('frame_hop')==256 and manifest.get('outer80_opened')==0)
+              results['x_files']=sum((root/(row['name']+'.x.npy')).is_file() for row in rows)
+              results['truth_files']=sum((root/(row['name']+'.truth.npz')).is_file() for row in rows)
+              if results['x_files']==280 and results['truth_files']==280:
+                  sample=min(rows,key=lambda r:r['frames'])
+                  for field,ext,outkey in (
+                       ('features_sha256','.x.npy','sample_x_sha_match'),
+                       ('labels_sha256','.truth.npz','sample_label_sha_match')):
+                      h=hashlib.sha256()
+                      with (root/(sample['name']+ext)).open('rb') as f:
+                          for chunk in iter(lambda:f.read(1048576),b''):h.update(chunk)
+                      results[outkey]=(h.hexdigest()==sample[field])
+          Path('/kaggle/working/H875_CACHE_MOUNT_INSPECTION.json').write_text(
+              json.dumps(results,sort_keys=True))
+          print('H875_CACHE_MOUNT_TEST_COMPLETE',json.dumps(results,sort_keys=True))
+          """.lstrip())
+          slug='note-h875-cache-probe-'+os.environ['GITHUB_RUN_ID']
+          meta=dict(id='tinahandriamarosoa/'+slug,title=slug,
+             code_file='cache_probe.py',language='python',kernel_type='script',
+             is_private=True,enable_gpu=False,enable_internet=False,
+             dataset_sources=[],competition_sources=[],
+             kernel_sources=['tinahandriamarosoa/note-h875-train224-k3-41202366684'],
+             model_sources=[])
+          (root/'kernel-metadata.json').write_text(json.dumps(meta,indent=2)+'\n')
+          print('H875_CPU_PROBE_GPU_REQUESTED',meta['enable_gpu'])
+          PY
+          result="$(kaggle kernels push -p "$RUNNER_TEMP/h875_cpu_probe" 2>&1)" ||
+                { echo 'H875_CPU_CACHE_PROBE_SUBMISSION_FAILED'; exit 1; }
+          if [[ "$result" == *"not valid kernel sources"* ||
+                "$result" == *"could not be added"* ]]; then
+            echo "H875_PREVIOUS_FAILED_KERNEL_CANNOT_ATTACH_AS_SOURCE"
+            exit 1
+          fi
+          echo "$result" | grep -E 'Kernel version [0-9]+ successfully pushed|Please check progress' || true
+          ref="tinahandriamarosoa/note-h875-cache-probe-$GITHUB_RUN_ID"
+          kaggle kernels status "$ref"
+          echo "H875_CPU_ONLY_CACHE_PROBE_SUBMITTED"
+          echo "https://www.kaggle.com/code/$ref"
