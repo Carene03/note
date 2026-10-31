@@ -1,0 +1,47 @@
+name: NOTE H873 private Kaggle scientific progress markers
+"on":
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/note-h873-kaggle-progress.yml"
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    env:
+      KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Report only approved H873 provenance and progress markers
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${KAGGLE_API_TOKEN:-}"
+          python -m pip install --disable-pip-version-check -q 'kaggle==2.2.5'
+          ref='tinahandriamarosoa/note-h873-cal56-41195681629'
+          kaggle kernels status "$ref"
+          kaggle kernels logs "$ref" > "$RUNNER_TEMP/h873_private.log" 2>&1 || true
+          python - "$RUNNER_TEMP/h873_private.log" <<'PY'
+          from pathlib import Path
+          import sys,re
+          s=Path(sys.argv[1]).read_text(errors='replace')
+          markers=[
+              'H873_PRIVATE_DATASET_AUTHENTICATED',
+              'H873_REFERENCE_ARTIFACTS_PRESENT',
+              'Contrats H873 : PASS',
+              'Suite Exact-K : PASS',
+              'H873_AUTHENTIC_H849_H866_BIT_EXACT',
+              'H873_AUDITED_SOURCE_VS_ROUTER',
+              'H873_KAGGLE_CAL56_OUTPUT_READY',
+          ]
+          for marker in markers:
+              print('NOTE_H873_PROGRESS',marker,marker in s)
+          errors=re.findall(r'(ModuleNotFoundError|FileNotFoundError|RuntimeError|ImportError|AssertionError|ValueError|TypeError|OSError)[: ]{1,3}[^\\n\\r"}]{0,140}',s)
+          print('NOTE_H873_KNOWN_ERROR_TYPE_COUNT',len(errors))
+          for item in errors[-2:]:
+              print('NOTE_H873_ERROR_TYPE',item[0])
+          PY
