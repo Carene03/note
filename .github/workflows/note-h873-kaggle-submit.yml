@@ -20,7 +20,7 @@ jobs:
       KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
       GH_TOKEN: ${{ secrets.NOTE_SOURCE_READ_TOKEN }}
       NOTE_SOURCE_BRANCH: codex/note-exactk-h873-kaggle-256-20261031
-      NOTE_BRIDGE_SHA: ea3f52376567608a8ea9385e54c5391216c4837c
+      NOTE_BRIDGE_SHA: 9c346f3b3e72a08351f383695358d1028e200388
       NOTE_SCIENCE_SHA: 05ef09cf8d750b3dc0220d38f37b56f6328e52f5
     steps:
       - name: Fail closed unless both private access tokens exist
