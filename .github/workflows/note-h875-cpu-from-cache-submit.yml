@@ -1,4 +1,5 @@
 name: NOTE H875 train learned K3 rescue from CERTIFIED CPU feature cache
+# JAMS-free cached-labels reader fix pinned; never re-run original H875.
 "on":
   push:
     branches: [main]
@@ -19,7 +20,7 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.NOTE_SOURCE_READ_TOKEN }}
       KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
-      SOURCE_PIN: 0ce68ad3f6ab3bb7db2e428d9b881c41ce7f2fce
+      SOURCE_PIN: 5bc414903aeb44a65d470978fcd418a392876c2c
       ORIGINAL_DATASET: tinahandriamarosoa/note-h873-source-41195681629
       CACHE_KERNEL: tinahandriamarosoa/note-h875-cpu-cache-41208886044
     steps:
@@ -43,9 +44,9 @@ jobs:
           for name in h875_gate.py test_h875_gate.py h875_kaggle_train.py; do
             sha="$(gh api "repos/Andriamarosoa/note/contents/research/exactk256/$name?ref=$SOURCE_PIN" --jq '.sha')"
             case "$name:$sha" in
-              h875_gate.py:6008e8207a750aa694bb088dee885ff933ae7960|\
-              test_h875_gate.py:a52c3c0f5db84bc555d5ac77de819ecfd102a3e3|\
-              h875_kaggle_train.py:13491866bd23c3acaaaf3b9b4ac8cc1a03dcb1c5) ;;
+              h875_gate.py:d09d6a871e9ac6ea961758586e45190e27c7bb3d|\
+              test_h875_gate.py:4fdf694f38c51e2afc1b00a9dff9c39f18a01a60|\
+              h875_kaggle_train.py:fe61fc9527dba6e1f085af47608683d4ebd9d28d) ;;
               *) echo "H875_SOURCE_SHA_DRIFT"; exit 1;;
             esac
             gh api "repos/Andriamarosoa/note/contents/research/exactk256/$name?ref=$SOURCE_PIN" --jq '.content' |
