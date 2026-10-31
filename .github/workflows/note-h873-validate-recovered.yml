@@ -1,0 +1,86 @@
+name: NOTE H873 verify recovered original CAL56 scientific evidence
+"on":
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/note-h873-validate-recovered.yml"
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    env:
+      KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Download private Kaggle reports and validate every source hash and 3206 notes
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${KAGGLE_API_TOKEN:-}"
+          python -m pip install -q --disable-pip-version-check kaggle==2.2.5
+          mkdir -p "$RUNNER_TEMP/cal56"
+          ref='tinahandriamarosoa/note-h873-cal56-41195681629'
+          kaggle kernels output "$ref" -p "$RUNNER_TEMP/cal56" \
+            --file-pattern '^(report.json|report.md|k3_to_k4_3206_errors.csv|k3_to_k4_annotated_note_exposure.csv|run_manifest.json)$' \
+            > "$RUNNER_TEMP/kaggle_private_output_log" 2>&1
+          python - <<'PY'
+          import json,csv,os,re,hashlib,collections
+          from pathlib import Path
+          def insist(x,msg):
+              if not x: raise AssertionError(msg)
+          root=Path(os.environ['RUNNER_TEMP'])/'cal56'
+          required=('report.json','report.md','k3_to_k4_3206_errors.csv',
+                    'k3_to_k4_annotated_note_exposure.csv','run_manifest.json')
+          insist(all((root/n).is_file() for n in required),'Missing scientific output')
+          manifest=json.loads((root/'run_manifest.json').read_text())
+          report=json.loads((root/'report.json').read_text())
+          insist(manifest.get('schema')=='H873_KAGGLE_PAIRED_SOURCE_ROUTER_V1','Manifest schema')
+          insist(manifest.get('complete') is True,'Incomplete report')
+          insist(manifest.get('github_submission_run_id')=='41195681629','Run provenance')
+          insist(manifest.get('pinned_source_commit')=='05ef09cf8d750b3dc0220d38f37b56f6328e52f5','Source')
+          insist(re.fullmatch('[0-9a-f]{64}',str(manifest.get('source_dataset_sha256',''))),'Source checksum missing')
+          insist((manifest.get('sample_rate'),manifest.get('new_pcm_per_decision'))==(44100,256),'Not PCM256')
+          insist((manifest.get('tracks'),manifest.get('frames'))==(56,325278),'Wrong CAL56 coverage')
+          insist(manifest.get('losses_k3_k4')==3206,'Target mismatch')
+          insist(manifest.get('original_predictions_bit_identical') is True,'Predictions drift')
+          insist(all(manifest.get(k) is False for k in ('fit80_opened','model_trained','promoted')),'Unsafe scope')
+          audit_sha='fba5b7a0c8acc0a51aaf93b471ec10eddeb2ffe73c60731f4ccec3e28a1982d3'
+          note_sha='8eef23e81cfd46f6eb7d465f33a5a4424ca3a22f74907913f927c0491c86998a'
+          insist(manifest.get('original_deep_audit_archive_sha256')==audit_sha,'Deep Audit hash mismatch')
+          insist((report.get('frames'),report.get('tracks'),report.get('sample_rate'),report.get('hop'))==(325278,56,44100,256),'Report replay mismatch')
+          insist(report.get('original_deep_audit_archive_sha256')==audit_sha,'Report audit mismatch')
+          insist(report.get('original_midi_annotation_export_sha256')==note_sha,'MIDI note-level hash mismatch')
+          insist(report.get('lost_k3_to_k4')==3206,'Report target mismatch')
+          insist(report.get('original_predictions_bit_identical') is True,'Report prediction drift')
+          insist(all(report.get(k) is False for k in ('FIT80_opened','model_trained','promoted')),'Invalid report scope')
+          insist(report.get('preserved_k3',0)>3000,'Historical K3 preservation missing')
+          entries=manifest.get('files',{})
+          insist(set(entries)==set(required)-{'run_manifest.json'},'Missing signed report files')
+          for name,meta in entries.items():
+              body=(root/name).read_bytes()
+              insist(len(body)==meta.get('bytes'),'Size mismatch: '+name)
+              insist(hashlib.sha256(body).hexdigest()==meta.get('sha256'),'SHA mismatch: '+name)
+          with (root/'k3_to_k4_3206_errors.csv').open(newline='') as fp:
+              errors=list(csv.DictReader(fp))
+          insist(len(errors)==3206,'Wrong note-level row count')
+          insist(all(int(x['truth_k'])==int(x['h849_k'])==3 and int(x['h866_k'])==4 for x in errors),'Wrong K3->K4')
+          insist(all(int(x['end_sample'])>0 and int(x['end_sample'])%256==0 for x in errors),'PCM sample alignment')
+          insist(all(len(json.loads(x['annotated_midi_note_ids_json']))==3 for x in errors),'Missing annotated trio')
+          with (root/'k3_to_k4_annotated_note_exposure.csv').open(newline='') as fp:
+              exposure=sum(1 for _ in csv.DictReader(fp))
+          insist(exposure>0,'Missing per-note exposure')
+          print('H873_ORIGINAL_SIGNED_REPORTS_VERIFIED',len(entries))
+          print('H873_ALL_CAL56_TRACKS_AND_FRAMES_VERIFIED',manifest['tracks'],manifest['frames'])
+          print('H873_STRICT_NATIVE_PCM_VERIFIED',manifest['sample_rate'],manifest['new_pcm_per_decision'])
+          print('H873_ORIGINAL_H849_H866_BIT_IDENTICAL',report['original_predictions_bit_identical'])
+          print('H873_3206_K3_TO_K4_MIDI_NOTE_TRIOS_VERIFIED',len(errors))
+          print('H873_ANNOTATED_NOTE_EXPOSURES_VERIFIED',exposure)
+          print('H873_FIT80_CLOSED_NO_TRAINING_NO_PROMOTION')
+          print('H873_ORIGINAL_DEEP_AUDIT_SHA256_VERIFIED')
+          print('H873_FINAL_CAL56_REPORT_SUCCESS')
+          print('H873_SCALAR_REPORT_FIELDS',','.join(sorted(k for k,v in report.items() if isinstance(v,(int,float,bool)))))
+          PY
