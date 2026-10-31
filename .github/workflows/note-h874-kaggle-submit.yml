@@ -16,8 +16,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 12
     env:
-      GH_TOKEN: \${{ secrets.NOTE_SOURCE_READ_TOKEN }}
-      KAGGLE_API_TOKEN: \${{ secrets.KAGGLE_API_TOKEN }}
+      GH_TOKEN: ${{ secrets.NOTE_SOURCE_READ_TOKEN }}
+      KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
       H874_COMMIT: b7c6deb9a05925c36e4f8b86e7a6cf1fc50ce875
       KAGGLE_SOURCE: tinahandriamarosoa/note-h873-source-41195681629
     steps:
@@ -28,7 +28,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test -n "\${GH_TOKEN:-}" && test -n "\${KAGGLE_API_TOKEN:-}"
+          test -n "${GH_TOKEN:-}" && test -n "${KAGGLE_API_TOKEN:-}"
           gh api repos/Andriamarosoa/note --silent
           echo "H874_PRIVATE_NOTE_AUTHENTICATED"
       - name: Read pinned private policy, tests and entry
@@ -64,7 +64,7 @@ jobs:
           set -euo pipefail
           python -m pip install -q --disable-pip-version-check 'kaggle==2.2.5'
           status="$(kaggle datasets status "$KAGGLE_SOURCE" 2>&1)"
-          [[ "\${status,,}" == "ready" ]] || { echo "H874_PRIVATE_SOURCE_NOT_READY"; exit 1; }
+          [[ "${status,,}" == "ready" ]] || { echo "H874_PRIVATE_SOURCE_NOT_READY"; exit 1; }
           files="$(kaggle datasets files "$KAGGLE_SOURCE" --page-size 40)"
           [[ "$files" == *note_h873_source.bin* && "$files" == *note_h873_source.sha256* ]] ||
              { echo "H874_PRIVATE_SOURCE_BINARY_OR_SHA_MISSING"; exit 1; }
