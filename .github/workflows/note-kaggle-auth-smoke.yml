@@ -1,0 +1,54 @@
+name: NOTE Kaggle token authentication smoke
+"on":
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/note-kaggle-auth-smoke.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: note-kaggle-auth-smoke
+  cancel-in-progress: false
+
+jobs:
+  verify_kaggle_token:
+    name: Verify private Kaggle API token without disclosure
+    runs-on: ubuntu-24.04
+    timeout-minutes: 7
+    env:
+      KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+      PYTHONUNBUFFERED: "1"
+    steps:
+      - name: Check secret presence without printing it
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${KAGGLE_API_TOKEN:-}" ]; then
+            echo "NOTE_KAGGLE_AUTH_SECRET_MISSING"
+            exit 1
+          fi
+          echo "NOTE_KAGGLE_AUTH_SECRET_PRESENT"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install official Kaggle CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check --quiet 'kaggle==2.2.5'
+          kaggle --version
+      - name: Verify server-side Kaggle account authentication
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Do not print private account contents, logs or credentials.
+          # quota is an authenticated API request; --version/help are not.
+          if kaggle quota >/dev/null 2>&1; then
+            echo "NOTE_KAGGLE_REMOTE_AUTH_SUCCESS"
+          else
+            echo "NOTE_KAGGLE_REMOTE_AUTH_FAILED"
+            exit 1
+          fi
