@@ -2,7 +2,7 @@ name: NOTE H876 paired common-error CPU experiment
 "on":
   push:
     branches: [main]
-    paths: ["requests/h876/submit-cpu-20261102-01.txt"]
+    paths: ["requests/h876/submit-cpu-20261102-02.txt"]
 permissions:
   contents: read
 concurrency:
@@ -51,7 +51,7 @@ jobs:
       - name: Verify completed private source cache
         run: |
           set -euo pipefail
-          python -m pip install --quiet 'kaggle==2.2.5'
+          python -m pip install --quiet 'kaggle==2.2.5' 'six==1.17.0'
           state="$(kaggle kernels status "$CACHE_KERNEL" 2>&1)"
           [[ "$state" == *"KernelWorkerStatus.COMPLETE"* ]] || { echo H876_CACHE_NOT_COMPLETE; exit 1; }
           state="$(kaggle datasets status "$ORIGINAL_DATASET" 2>&1)"
