@@ -15,7 +15,7 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.NOTE_SOURCE_READ_TOKEN }}
       KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
-      VERIFIER_PIN: 8e3a9546ffd294d0e5a7e5408ab97884ad6b0494
+      VERIFIER_PIN: 77edfce5008c31d6d27f644020a008ac1ad31062
       SCIENCE_PIN: 8e1d0adb84c2ee64f0bfdd542075703f1f332ebd
       KERNEL: tinahandriamarosoa/note-h876-common-ab-41345998907
     steps:
@@ -78,3 +78,4 @@ jobs:
           summary=verify_outputs(candidates[0].parent,os.environ['SCIENCE_PIN'])
           print('H876_VERIFIED_SUMMARY',json.dumps(summary,sort_keys=True,separators=(',',':')),flush=True)
           PY
+
