@@ -1,0 +1,80 @@
+name: NOTE H876 verify private CPU output without retraining
+"on":
+  push:
+    branches: [main]
+    paths: ["requests/h876/verify-*.txt"]
+permissions:
+  contents: read
+concurrency:
+  group: note-h876-read-only-verification
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      GH_TOKEN: ${{ secrets.NOTE_SOURCE_READ_TOKEN }}
+      KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+      VERIFIER_PIN: 8e3a9546ffd294d0e5a7e5408ab97884ad6b0494
+      SCIENCE_PIN: 8e1d0adb84c2ee64f0bfdd542075703f1f332ebd
+      KERNEL: tinahandriamarosoa/note-h876-common-ab-41345998907
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install read-only verifier and validate its tests
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'numpy==1.26.4' 'kaggle==2.2.5' 'six==1.17.0' 'pytest==9.2.0'
+          mkdir -p "$RUNNER_TEMP/h876_verify"
+          cd "$RUNNER_TEMP/h876_verify"
+          for name in verify_h876_outputs test_verify_h876_outputs; do
+            gh api "repos/Andriamarosoa/note/contents/research/exactk256/$name.py?ref=$VERIFIER_PIN" --jq '.content' | tr -d '\n' | base64 -d > "$name.py"
+          done
+          python -m py_compile *.py
+          python -m pytest -q test_verify_h876_outputs.py > "$RUNNER_TEMP/verifier_private_tests.log" 2>&1 || { echo H876_OUTPUT_VERIFIER_TEST_FAILED; exit 1; }
+          tail -n 1 "$RUNNER_TEMP/verifier_private_tests.log"
+      - name: Watch original private CPU run then independently verify outputs
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/h876_verify"
+          python - <<'PY'
+          import os,sys,json,subprocess,time,re
+          from pathlib import Path
+          from verify_h876_outputs import verify_outputs
+          kernel=os.environ['KERNEL'];state=None
+          for attempt in range(60):
+              r=subprocess.run(['kaggle','kernels','status',kernel],capture_output=True,text=True,timeout=90)
+              if r.returncode:
+                  print('H876_READ_ONLY_STATUS_FAILED_NO_RETRY_OF_SCIENCE',flush=True)
+                  sys.exit(1)
+              matches=re.findall(r'KernelWorkerStatus\.([A-Z_]+)',r.stdout+r.stderr)
+              if len(matches)!=1:raise RuntimeError('Unrecognized Kaggle status')
+              state=matches[0]
+              print('H876_ORIGINAL_PRIVATE_CPU_STATUS',state,flush=True)
+              if state in ('COMPLETE','ERROR','CANCELLED','CANCELED'):break
+              if state not in ('QUEUED','RUNNING'):raise RuntimeError('Unexpected kernel state')
+              if attempt<59:time.sleep(30)
+          if state in ('QUEUED','RUNNING'):
+              print('H876_STILL_RUNNING_NO_DUPLICATE_SUBMITTED',flush=True)
+              sys.exit(0)
+          out=Path(os.environ['RUNNER_TEMP'])/'h876_private_outputs';out.mkdir()
+          if state!='COMPLETE':
+              r=subprocess.run(['kaggle','kernels','output',kernel,'-p',str(out),'--file-pattern',r'(^|/)h876[^/]*[.]log$'],capture_output=True,text=True,timeout=180)
+              stages=set();errors=set();missing=set()
+              for p in out.rglob('*.log'):
+                  raw=p.read_text(errors='replace')
+                  stages.update(re.findall(r'H876_(?:BASELINES_BIT_IDENTICAL_BEFORE_TRAIN|REAL_SOURCE_AB_FORWARD_BACKWARD_PASS|ARM_FROZEN_TRAIN_ONLY|BOTH_RAW_PREDICTIONS_PRESERVED_BEFORE_AUDIT|SIGNED_OUTPUT_READY)',raw))
+                  errors.update(re.findall(r'^([A-Za-z_][A-Za-z0-9_.]*(?:Error|Exception)):',raw,re.M))
+                  missing.update(re.findall(r"No module named ['\"]([a-zA-Z0-9_.]+)['\"]",raw))
+              print('H876_SCIENCE_TERMINAL_ERROR',json.dumps(dict(state=state,stages=sorted(stages),error_classes=sorted(errors),missing_modules=sorted(missing),log_files=len(list(out.rglob('*.log'))))),flush=True)
+              sys.exit(1)
+          pattern=r'(^|/)h876_(report[.]json|report[.]md|manifest[.]json|raw_manifest[.]json|cal_predictions[.]npz|models/.*|audit_[AB]/.*)$'
+          r=subprocess.run(['kaggle','kernels','output',kernel,'-p',str(out),'--file-pattern',pattern],capture_output=True,text=True,timeout=480)
+          if r.returncode:
+              print('H876_PRIVATE_OUTPUT_DOWNLOAD_FAILED_NO_RETRAIN',flush=True);sys.exit(1)
+          candidates=list(out.rglob('h876_manifest.json'))
+          if len(candidates)!=1:raise RuntimeError('Exactly one complete H876 output manifest required')
+          summary=verify_outputs(candidates[0].parent,os.environ['SCIENCE_PIN'])
+          print('H876_VERIFIED_SUMMARY',json.dumps(summary,sort_keys=True,separators=(',',':')),flush=True)
+          PY
