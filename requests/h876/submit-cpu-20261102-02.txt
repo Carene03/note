@@ -1,0 +1,1 @@
+First orchestration41345587036 stopped BEFORE Kaggle push; no scientific run exists from it. Kaggle dependency six1.17.0 verified by41345916999: cacheCOMPLETE,datasetREADY. Submit one private CPU A/B experiment pinned8e1d0adb84c2ee64f0bfdd542075703f1f332ebd. No GPU,no regeneration,no FIT80,no promotion. User goal90% not a score claim.
