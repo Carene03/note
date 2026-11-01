@@ -1,0 +1,1 @@
+First diagnostic proved local Kaggle CLI ModuleNotFoundError before API. Identify module name only. No training request.
