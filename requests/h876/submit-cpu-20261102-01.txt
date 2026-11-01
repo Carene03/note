@@ -1,0 +1,4 @@
+H876 single submission authorized by user on 2026-11-02 (Mauritius).
+Source 8e1d0adb84c2ee64f0bfdd542075703f1f332ebd
+Reuse certified private CPU cache; enable_gpu=false; TRAIN224-only fitting; CAL56 once after freeze; no FIT80, future, hold or promotion. Goal90% is exploratory, not a claimed result.
+No rerun of this request. Preserve weights and raw outputs on any reporting failure.
