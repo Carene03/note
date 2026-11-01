@@ -1,0 +1,1 @@
+Monitor only tinahandriamarosoa/note-h876-common-ab-41345998907. OnCOMPLETE verify outputs and historical hashes with source8e1d0adb84c2ee64f0bfdd542075703f1f332ebd. OnERROR preserve failure, never duplicate training. Verifier 8e3a9546ffd294d0e5a7e5408ab97884ad6b0494
