@@ -1,0 +1,36 @@
+name: NOTE H876 read-only Kaggle access diagnostic
+"on":
+  push:
+    branches: [main]
+    paths: ["requests/h876/diagnose-access-*.txt"]
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Classify read-only Kaggle errors without secret or dataset disclosure
+        run: |
+          python -m pip install --quiet 'kaggle==2.2.5'
+          python - <<'PY'
+          import subprocess, json, re, os
+          for label, cmd in [
+              ('cache', ['kaggle','kernels','status','tinahandriamarosoa/note-h875-cpu-cache-41208886044']),
+              ('dataset', ['kaggle','datasets','status','tinahandriamarosoa/note-h873-source-41195681629'])]:
+              result=subprocess.run(cmd,capture_output=True,text=True,timeout=60)
+              raw=result.stdout+'\n'+result.stderr
+              flags=[word for word in ['401','403','404','429','Unauthorized','Forbidden','Not Found','SSLError','ConnectionError','Timeout','kaggle.json','KAGGLE_API_TOKEN','credentials','invalid','expired','ModuleNotFoundError','AttributeError'] if word.lower() in raw.lower()]
+              states=re.findall(r'KernelWorkerStatus\.[A-Z_]+',raw)
+              types=re.findall(r'^([A-Za-z_][A-Za-z0-9_.]*(?:Error|Exception)):',raw,re.M)
+              print('H876_KAGGLE_ACCESS_DIAGNOSTIC',json.dumps(dict(target=label,returncode=result.returncode,flags=flags,states=states,exception_types=types,token_present=bool(os.environ.get('KAGGLE_API_TOKEN')),ready=result.stdout.strip().lower()=='ready')))
+              if result.returncode:
+                  # Fixed known-safe classes of messages only; no raw exception payload.
+                  for phrase in ['Could not find kaggle.json','Could not authenticate','Invalid token','Token expired','Unauthorized','Forbidden']:
+                      if phrase.lower() in raw.lower(): print('H876_ACCESS_REASON',phrase)
+          PY
