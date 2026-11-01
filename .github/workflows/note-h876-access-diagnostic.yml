@@ -27,8 +27,9 @@ jobs:
               raw=result.stdout+'\n'+result.stderr
               flags=[word for word in ['401','403','404','429','Unauthorized','Forbidden','Not Found','SSLError','ConnectionError','Timeout','kaggle.json','KAGGLE_API_TOKEN','credentials','invalid','expired','ModuleNotFoundError','AttributeError'] if word.lower() in raw.lower()]
               states=re.findall(r'KernelWorkerStatus\.[A-Z_]+',raw)
+              missing_modules=re.findall(r"No module named ['\"]([a-zA-Z0-9_.]+)['\"]",raw)
               types=re.findall(r'^([A-Za-z_][A-Za-z0-9_.]*(?:Error|Exception)):',raw,re.M)
-              print('H876_KAGGLE_ACCESS_DIAGNOSTIC',json.dumps(dict(target=label,returncode=result.returncode,flags=flags,states=states,exception_types=types,token_present=bool(os.environ.get('KAGGLE_API_TOKEN')),ready=result.stdout.strip().lower()=='ready')))
+              print('H876_KAGGLE_ACCESS_DIAGNOSTIC',json.dumps(dict(target=label,returncode=result.returncode,flags=flags,states=states,missing_modules=missing_modules,exception_types=types,token_present=bool(os.environ.get('KAGGLE_API_TOKEN')),ready=result.stdout.strip().lower()=='ready')))
               if result.returncode:
                   # Fixed known-safe classes of messages only; no raw exception payload.
                   for phrase in ['Could not find kaggle.json','Could not authenticate','Invalid token','Token expired','Unauthorized','Forbidden']:
