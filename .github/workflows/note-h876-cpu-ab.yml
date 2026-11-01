@@ -1,0 +1,84 @@
+name: NOTE H876 paired common-error CPU experiment
+"on":
+  push:
+    branches: [main]
+    paths: ["requests/h876/submit-cpu-20261102-01.txt"]
+permissions:
+  contents: read
+concurrency:
+  group: note-exactk-h876-single-cpu-experiment
+  cancel-in-progress: false
+jobs:
+  submit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ secrets.NOTE_SOURCE_READ_TOKEN }}
+      KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+      SOURCE_PIN: 8e1d0adb84c2ee64f0bfdd542075703f1f332ebd
+      ORIGINAL_DATASET: tinahandriamarosoa/note-h873-source-41195681629
+      CACHE_KERNEL: tinahandriamarosoa/note-h875-cpu-cache-41208886044
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Authenticate and reject duplicate run attempts
+        run: |
+          set -euo pipefail
+          test "$GITHUB_RUN_ATTEMPT" = 1
+          test -n "${GH_TOKEN:-}" && test -n "${KAGGLE_API_TOKEN:-}"
+          gh api repos/Andriamarosoa/note --silent
+          echo H876_PRIVATE_SOURCE_ACCESS_CONFIRMED
+      - name: Fetch immutable private sources and execute CPU preflight
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/h876"
+          mkdir -p "$root/kernel"
+          cd "$root"
+          for name in h876_common h876_audit h876_kaggle_train build_h876_payload test_h876_common test_h876_audit test_h876_payload h875_gate note_deep_audit; do
+            gh api "repos/Andriamarosoa/note/contents/research/exactk256/$name.py?ref=$SOURCE_PIN" --jq '.content' | tr -d '\n' | base64 -d > "$name.py"
+          done
+          python -m pip install --quiet 'numpy==1.26.4' 'pytest==9.2.0'
+          python -m pip install --quiet 'torch==2.5.1' --index-url https://download.pytorch.org/whl/cpu
+          python -m py_compile *.py
+          if ! python -m pytest -q test_h876_common.py test_h876_audit.py test_h876_payload.py > "$RUNNER_TEMP/h876_private_tests.log" 2>&1; then
+            echo H876_CPU_PREFLIGHT_FAILED_NO_SUBMISSION
+            exit 1
+          fi
+          tail -n 1 "$RUNNER_TEMP/h876_private_tests.log"
+          python build_h876_payload.py --source-commit "$SOURCE_PIN" --output "$root/kernel/h876_private_cpu.py"
+          echo H876_PRIVATE_PAYLOAD_COMPILED_AND_TESTED
+      - name: Verify completed private source cache
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'kaggle==2.2.5'
+          state="$(kaggle kernels status "$CACHE_KERNEL" 2>&1)"
+          [[ "$state" == *"KernelWorkerStatus.COMPLETE"* ]] || { echo H876_CACHE_NOT_COMPLETE; exit 1; }
+          state="$(kaggle datasets status "$ORIGINAL_DATASET" 2>&1)"
+          [[ "${state,,}" == "ready" ]] || { echo H876_SOURCE_NOT_READY; exit 1; }
+          echo H876_EXISTING_CPU_CACHE_READY_NO_REGENERATION
+      - name: Submit one private CPU-only paired experiment
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          root=Path(os.environ['RUNNER_TEMP'])/'h876'/'kernel'
+          slug='note-h876-common-ab-'+os.environ['GITHUB_RUN_ID']
+          meta=dict(id='tinahandriamarosoa/'+slug,title=slug,code_file='h876_private_cpu.py',
+            language='python',kernel_type='script',is_private=True,enable_gpu=False,
+            enable_internet=True,dataset_sources=[os.environ['ORIGINAL_DATASET']],
+            kernel_sources=[os.environ['CACHE_KERNEL']],competition_sources=[],model_sources=[])
+          (root/'kernel-metadata.json').write_text(json.dumps(meta,indent=2)+'\n')
+          print('H876_CPU_ONLY_PRIVATE_KERNEL',meta['id'])
+          PY
+          result="$(kaggle kernels push -p "$RUNNER_TEMP/h876/kernel" 2>&1)" || { echo H876_PUSH_FAILED; exit 1; }
+          if [[ "$result" == *"not valid"* || "$result" == *"could not be added"* ]]; then
+            echo H876_SOURCE_ATTACH_FAILED
+            exit 1
+          fi
+          echo "$result" | grep -E 'Kernel version [0-9]+ successfully pushed|Please check progress' || true
+          ref="tinahandriamarosoa/note-h876-common-ab-$GITHUB_RUN_ID"
+          kaggle kernels status "$ref"
+          echo H876_PRIVATE_CPU_EXPERIMENT_SUBMITTED_ONCE
+          echo "https://www.kaggle.com/code/$ref"
