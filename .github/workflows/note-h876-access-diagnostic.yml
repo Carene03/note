@@ -17,7 +17,7 @@ jobs:
           python-version: "3.11"
       - name: Classify read-only Kaggle errors without secret or dataset disclosure
         run: |
-          python -m pip install --quiet 'kaggle==2.2.5'
+          python -m pip install --quiet 'kaggle==2.2.5' 'six==1.17.0'
           python - <<'PY'
           import subprocess, json, re, os
           for label, cmd in [
