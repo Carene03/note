@@ -1,0 +1,6 @@
+READ-ONLY verification of the original H876 private CPU notebook, version 1.
+Kernel: tinahandriamarosoa/note-h876-common-ab-41345998907
+Science: 8e1d0adb84c2ee64f0bfdd542075703f1f332ebd
+Verifier: 77edfce5008c31d6d27f644020a008ac1ad31062
+Previous verification 41346262582 failed test fixture import before contacting Kaggle; isolated standalone tests now pass.
+Do not submit, push, or retrain a kernel. Keep all source, weights, raw predictions and track names private.
